@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import cv, { } from "@techstark/opencv-js";
-import { BugAntIcon } from '@heroicons/react/20/solid';
+import { BugAntIcon, ArrowsRightLeftIcon } from '@heroicons/react/20/solid';
 import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 
 function classNames(...classes) {
@@ -32,6 +32,11 @@ function App() {
   const [threshold, setThreshold] = useState<number>(0);
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
   const [mode, setMode] = useState<string>("defective");
+  const [method, setMethod] = useState<string>("ORB");
+  const [resolution, setResolution] = useState<number>(512);
+
+  const input1Ref = useRef<HTMLInputElement>(null);
+  const input2Ref = useRef<HTMLInputElement>(null);
 
   function thresholdDefects(threshold = 0) {
     if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
@@ -118,7 +123,10 @@ function App() {
     }
   }
 
-  function computeDefects(threshold = 0, knnDistance_option = 0.7) {
+  function computeDefects(threshold = 0, method = "ORB", resolution = "512", knnDistance_option = 0.7) {
+    // set seed to keep result consistent
+    cv.setRNGSeed(0);
+
     if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
       imgAbnormalBinary.delete();
     }
@@ -137,6 +145,17 @@ function App() {
 
     // load images
     let im1 = cv.imread(img1);
+    // resize to w=1024, keep same aspect ratio
+    // calculate new height
+    if (resolution !== "original") {
+      let newW = parseInt(resolution)
+      let newHeight = Math.round((newW / im1.cols) * im1.rows);
+      let im1Resized = new cv.Mat();
+      cv.resize(im1, im1Resized, new cv.Size(newW, newHeight), 0, 0, cv.INTER_AREA);
+      im1.delete();
+      im1 = im1Resized;
+    }
+    console.log("im1", im1.size());
     // blur im1 to remove noise
     let im1Blur = new cv.Mat();
     cv.GaussianBlur(im1, im1Blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
@@ -144,6 +163,17 @@ function App() {
     im1 = im1Blur;
 
     let im2 = cv.imread(img2);
+    // resize to w=1024, keep same aspect ratio
+    // calculate new height
+    if (resolution !== "original") {
+      let newW = parseInt(resolution)
+      let newHeight = Math.round((newW / im2.cols) * im2.rows);
+      let im2Resized = new cv.Mat();
+      cv.resize(im2, im2Resized, new cv.Size(newW, newHeight), 0, 0, cv.INTER_AREA);
+      im2.delete();
+      im2 = im2Resized;
+    }
+    console.log("im2", im2.size());
     // blur im2 to remove noise
     let im2Blur = new cv.Mat();
     cv.GaussianBlur(im2, im2Blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
@@ -161,25 +191,36 @@ function App() {
     let descriptors1 = new cv.Mat();
     let descriptors2 = new cv.Mat();
 
-    const orb = new (cv as any).ORB(4000, 1.2, 8, 31)
+    let orb;
+    if (method === "AKAZE") {
+      orb = new (cv as any).AKAZE();
+      // orb.setDescriptorSize(256);
+      // orb.setThreshold(0.0003);
+    } else if (method === "BRISK") {
+      orb = new (cv as any).BRISK(30, 4, 1.0);
+    } else {
+      orb = new (cv as any).ORB(4096, 1.2, 8);
+    }
+
     let det1 = new cv.Mat();
     let det2 = new cv.Mat();
 
     orb.detectAndCompute(im1Gray, det1, keypoints1, descriptors1);
     orb.detectAndCompute(im2Gray, det2, keypoints2, descriptors2);
 
-    console.log("Total of ", keypoints1.size(), " keypoints1 (img to align) and ", keypoints2.size(), " keypoints2 (reference)");
-    console.log("here are the first 5 keypoints for keypoints1:");
-    for (let i = 0; i < keypoints1.size(); i++) {
-      console.log("keypoints1: [", i, "]", keypoints1.get(i).pt.x, keypoints1.get(i).pt.y);
-      if (i === 5) { break; }
-    }
+    // console.log("Total of ", keypoints1.size(), " keypoints1 (img to align) and ", keypoints2.size(), " keypoints2 (reference)");
+    // console.log("here are the first 5 keypoints for keypoints1:");
+    // for (let i = 0; i < keypoints1.size(); i++) {
+    //   console.log("keypoints1: [", i, "]", keypoints1.get(i).pt.x, keypoints1.get(i).pt.y);
+    //   if (i === 5) { break; }
+    // }
 
     // Match features.
     let good_matches: any = new cv.DMatchVector();
-    let bf: any = new cv.BFMatcher(); // let bf = new cv.BFMatcher(cv.NORM_HAMMING, true);
+    // let bf: any = new cv.BFMatcher(); 
+    let bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
     let matches: any = new cv.DMatchVectorVector();
-    bf.knnMatch(descriptors1, descriptors2, matches, 2);
+    bf.knnMatch(descriptors1, descriptors2, matches, 4);
 
     let counter = 0;
     for (let i = 0; i < matches.size(); ++i) {
@@ -231,7 +272,9 @@ function App() {
     mat2.data32F.set(points2);
 
     // Find homography
-    let h = cv.findHomography(mat1, mat2, cv.RANSAC);
+    let hMask = new cv.Mat();
+    let h = cv.findHomography(mat1, mat2, cv.RHO, 5.0, hMask, 2000, 0.995);
+    hMask.delete();
 
     if (h.empty()) {
       alert("homography matrix empty!");
@@ -491,11 +534,11 @@ function App() {
   useEffect(() => {
     renderBboxesOverlay();
   }, [bboxes])
-  useEffect(() => {
-    if (!img1 || !img2) return;
-    setThreshold(0);
-    computeDefects(0);
-  }, [img1, img2])
+  // useEffect(() => {
+  //   if (!img1 || !img2) return;
+  //   setThreshold(0);
+  //   computeDefects(0);
+  // }, [img1, img2])
 
   const canvasClickHandler = (e: any) => {
     console.log("canvas click", e);
@@ -527,15 +570,15 @@ function App() {
   return (
     <>
       {/* sticky footer at the bottom */}
-      <div className="flex flex-row fixed bottom-0 bg-gray-100 w-full px-4 justify-between z-10 space-x-2">
+      <div className="flex flex-row fixed bottom-0 bg-gray-100 w-full px-4 justify-between z-10 space-x-2 items-center">
         {/* buttons to swap between the 3 canvases */}
-        <div className="flex justify-center space-x-2 my-4">
+        <div className="flex space-x-2 my-4 items-center">
           <button type="button"
             className={classNames(mode === 'clean' ? 'text-white bg-blue-500' : 'text-black bg-grey-500', "rounded-md border-0 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400")} onClick={() => {
               // show imageAbnormal
               setMode("clean");
               cv.imshow(imageAbnormalOverlayRef.current, cleanImg);
-            }}>Clean Image</button>
+            }}>Clean</button>
           {/* <button type="button"
             className="rounded bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
               // show imageDiff
@@ -546,7 +589,7 @@ function App() {
               // show imageAligned
               setMode("defective");
               renderBboxesOverlay();
-            }}>Defective Image</button>
+            }}>Defective</button>
           {/* swap button to swap clean and defective image */}
           <button type="button"
             className="rounded bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
@@ -558,40 +601,70 @@ function App() {
               setImg2(img1);
 
               // recompute
-              computeDefects(0);
-            }}>Swap Images</button>
+              computeDefects(0, method, resolution);
+            }}>
+            <ArrowsRightLeftIcon className="w-5 text-gray-500"
+              aria-hidden="true"></ArrowsRightLeftIcon>
+          </button>
         </div>
         {/* slider for threshold */}
-        <div className="flex items-center space-x-2 my-4">
-          <label htmlFor="threshold" className="text-gray-900 font-semibold">Threshold: </label>
-          {/* button to minus threshold */}
-          <button type="button"
-            className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-              setThreshold(threshold - 1);
-              thresholdDefects(threshold - 1);
-            }}>-</button>
-          {/* display threshold value */}
-          <label htmlFor="threshold" className="text-gray-900 font-semibold">{threshold}</label>
+        <div className="flex my-4">
+          <div className="flex flex-col text-center">
+            {/* button to minus threshold */}
+            <div className="flex flex-row space-x-2 items-center">
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  setThreshold(threshold - 1);
+                  thresholdDefects(threshold - 1);
+                }}>-</button>
+              {/* display threshold value */}
+              <label htmlFor="threshold" className="text-gray-900 font-semibold">{threshold}</label>
 
-          {/* button to plus threshold */}
-          <button type="button"
-            className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-              setThreshold(threshold + 1);
-              thresholdDefects(threshold + 1);
-            }}>+</button>
-          {/* auto detect threshold button */}
-          <button type="button"
-            className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-              const t = autoThreshold(imgAbnormal);
-              thresholdDefects(t);
-            }}>Auto</button>
-
+              {/* button to plus threshold */}
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  setThreshold(threshold + 1);
+                  thresholdDefects(threshold + 1);
+                }}>+</button>
+              {/* auto detect threshold button */}
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  const t = autoThreshold(imgAbnormal);
+                  thresholdDefects(t);
+                }}>Auto</button>
+            </div>
+            <label htmlFor="threshold" className="text-gray-900 font-semibold">Threshold</label>
+          </div>
         </div>
         {/* button to run the algorithm */}
         <div className="flex justify-center space-x-2 my-4">
+          {/* select sizes: 256, 512, 1024, 2048, original */}
+          <div className="flex flex-col items-center space-x-2">
+            <select className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
+              setResolution(e.target.value);
+            }}
+              value={resolution}>
+              <option value="256">256</option>
+              <option value="512">512</option>
+              <option value="1024">1024</option>
+              <option value="2048">2048</option>
+              <option value="original">Original</option>
+            </select>
+            <label htmlFor="method" className="text-gray-900 font-semibold">Size</label>
+          </div>
+          <div className="flex flex-col items-center space-x-2">
+            <select className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
+              setMethod(e.target.value);
+            }}
+              value={method}>
+              <option value="AKAZE">AKAZE (slow)</option>
+              <option value="ORB">ORB (fast)</option>
+            </select>
+            <label htmlFor="method" className="text-gray-900 font-semibold">Method</label>
+          </div>
           <button type="button"
             className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-              computeDefects(threshold);
+              computeDefects(0, method, resolution);
             }}>Compute Defects</button>
         </div>
       </div>
@@ -634,10 +707,16 @@ function App() {
 
           {/* button to upload 2 images */}
           <div className="flex flex-row space-x-4">
-            <div className="flex-1 flex flex-row justify-between">
+            <div className="flex-1 flex flex-row space-x-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Clean Image</label>
-                <input type="file" className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-500 file:py-2.5 file:px-4 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-700 focus:outline-none disabled:pointer-events-none disabled:opacity-60" accept="image/*" onChange={(e: any) => {
+                {/* button to upload */}
+                <button type="button"
+                  className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                    input1Ref.current?.click();
+                  }}>Upload</button>
+                {/* input file */}
+                <input ref={input1Ref} type="file" className="hidden w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-500 file:py-2.5 file:px-4 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-700 focus:outline-none disabled:pointer-events-none disabled:opacity-60" accept="image/*" onChange={(e: any) => {
                   // load img to objectURL
                   const img1 = e.target.files![0];
                   const img1URL = URL.createObjectURL(img1);
@@ -652,16 +731,24 @@ function App() {
                     setImg1(imgElement)
                   }
                   setImg1URL(img1URL);
+                  // clear input value
+                  e.target.value = null;
                 }} />
               </div>
               <img className="h-24" src={img1URL}></img>
               {/* <canvas className="h-24"
                 ref={canvas1Ref}></canvas> */}
             </div>
-            <div className="flex-1 flex flex-row justify-between">
+            <div className="flex-1 flex flex-row space-x-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Defective Image</label>
-                <input type="file" className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-500 file:py-2.5 file:px-4 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-700 focus:outline-none disabled:pointer-events-none disabled:opacity-60" accept="image/*" onChange={(e: any) => {
+                {/* button to upload */}
+                <button type="button"
+                  className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                    input2Ref.current?.click();
+                  }}>Upload</button>
+                {/* input file */}
+                <input ref={input2Ref} type="file" className="hidden w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-500 file:py-2.5 file:px-4 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-700 focus:outline-none disabled:pointer-events-none disabled:opacity-60" accept="image/*" onChange={(e: any) => {
                   // load img to objectURL
                   const img2 = e.target.files![0];
                   const img2URL = URL.createObjectURL(img2);
@@ -676,6 +763,8 @@ function App() {
                     setImg2(imgElement);
                   }
                   setImg2URL(img2URL);
+                  // clear input value
+                  e.target.value = null;
                 }} />
               </div>
               <img className="h-24" src={img2URL}></img>
