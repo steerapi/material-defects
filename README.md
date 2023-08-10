@@ -1,5 +1,8 @@
 # Compare two images for defects
 
-## Usage
+Using opencv.js to compare two images for defects.
 
-```bash
+## Development
+
+   yarn install
+   yarn dev

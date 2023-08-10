@@ -1,7 +1,7 @@
 /* eslint-disable prefer-const */
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import cv, {  } from "@techstark/opencv-js";
+import cv, { } from "@techstark/opencv-js";
 import { BugAntIcon } from '@heroicons/react/20/solid';
 import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 
