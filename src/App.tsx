@@ -1,5 +1,5 @@
 /* eslint-disable prefer-const */
-import { useEffect, useRef, useState } from 'react'
+import { MutableRefObject, useEffect, useRef, useState } from 'react'
 import './App.css'
 import cv, { } from "@techstark/opencv-js";
 import { BugAntIcon, ArrowsRightLeftIcon } from '@heroicons/react/20/solid';
@@ -13,18 +13,25 @@ function App() {
   const imageCompareMatchesRef = useRef<HTMLCanvasElement>(null);
   const imageAlignedRef = useRef<HTMLCanvasElement>(null);
   const imageDiffRef = useRef<HTMLCanvasElement>(null);
+  const imageDiffNegativeRef = useRef<HTMLCanvasElement>(null);
   const imageMaskRef = useRef<HTMLCanvasElement>(null);
   const imageAbnormalRef = useRef<HTMLCanvasElement>(null);
   const imageAbnormalOverlayRef = useRef<HTMLCanvasElement>(null);
   const [numPixels, setNumPixels] = useState<number>(0);
   const [numBoxes, setNumBoxes] = useState<number>(0);
   const [bboxes, setBboxes] = useState<any>([]);
+  const [bboxesNegative, setBboxesNegative] = useState<any>([]);
 
   const [cleanImg, setCleanImg] = useState<any>(null);
   const [defectImg, setDefectImg] = useState<any>(null);
   const [imgAbnormalBinary, setImgAbnormalBinary] = useState<any>(null);
   const [imgAbnormalRGB, setImgAbnormalRGB] = useState<any>(null);
   const [imgAbnormal, setImgAbnormal] = useState<any>(null);
+  const [imgAbnormalBinaryNegative, setImgAbnormalBinaryNegative] = useState<any>(null);
+  const [imgAbnormalRGBNegative, setImgAbnormalRGBNegative] = useState<any>(null);
+  const [imgAbnormalNegative, setImgAbnormalNegative] = useState<any>(null);
+
+  
   const [img1, setImg1] = useState<HTMLImageElement | null>(null);
   const [img2, setImg2] = useState<HTMLImageElement | null>(null);
   const [img1URL, setImg1URL] = useState<any>(null);
@@ -34,35 +41,25 @@ function App() {
   const [mode, setMode] = useState<string>("defective");
   const [method, setMethod] = useState<string>("ORB");
   const [resolution, setResolution] = useState<number>(512);
+  const [autoRatio, setAutoRatio] = useState<number>(0.8);
 
   const input1Ref = useRef<HTMLInputElement>(null);
   const input2Ref = useRef<HTMLInputElement>(null);
 
-  function thresholdDefects(threshold = 0) {
-    if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
-      imgAbnormalBinary.delete();
-    }
+  function thresholdDefectsNegative(image_abnormal, threshold = 0) {
+    // if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+    //   imgAbnormalBinaryNegative.delete();
+    // }
 
     // binarize image_abnormal
     let image_abnormal_binary = new cv.Mat();
-    cv.threshold(imgAbnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
-
-    // convert to 4 channels and display
-    // let image_abnormal_rgb_4channels = new cv.Mat();
-    // cv.cvtColor(image_abnormal_binary, image_abnormal_rgb_4channels, cv.COLOR_GRAY2RGBA);
-    cv.imshow(imageDiffRef.current, image_abnormal_binary);
+    cv.threshold(image_abnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
+    cv.imshow(imageDiffNegativeRef.current, image_abnormal_binary);
 
     // find location of abnormality in image_abnormal_binary
     let contours: any = new cv.MatVector();
     let hierarchy = new cv.Mat();
     cv.findContours(image_abnormal_binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-    console.log("contours.size()", contours.size())
-    // copy im2 to image_abnormal_binary_rgb
-    // let image_abnormal_binary_rgb = im2.clone();
-    // draw image_abnormal_binary_rgb with im2
-    // im2.copyTo(image_abnormal_binary_rgb);
-
     let bboxes = [];
     // for each contours, find the bounding rectangle
     for (let i = 0; i < contours.size(); ++i) {
@@ -76,23 +73,57 @@ function App() {
       // save bounding box coordinates with padding of 10
       bboxes.push([x - 10, y - 10, x + w + 10, y + h + 10]);
     }
-
     // merge overlapping boxes in bboxes to one bigger box 
     mergeBboxes(bboxes);
+    setBboxesNegative(bboxes);
 
-    setBboxes(bboxes);
-    setImgAbnormalBinary(image_abnormal_binary);
-    // setImgAbnormalRGB(image_abnormal_binary_rgb);
+    setImgAbnormalBinaryNegative(image_abnormal_binary);
 
     // cleanup
     contours.delete();
     hierarchy.delete();
-
   }
 
-  function autoThreshold(image_abnormal) {
+  function thresholdDefects(image_abnormal, threshold = 0) {
+    // binarize image_abnormal
+    let image_abnormal_binary = new cv.Mat();
+    cv.threshold(image_abnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
+    cv.imshow(imageDiffRef.current, image_abnormal_binary);
+
+    // find location of abnormality in image_abnormal_binary
+    let contours: any = new cv.MatVector();
+    let hierarchy = new cv.Mat();
+    cv.findContours(image_abnormal_binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    let bboxes = [];
+    // for each contours, find the bounding rectangle
+    for (let i = 0; i < contours.size(); ++i) {
+      let cnt = contours.get(i);
+      let rect = cv.boundingRect(cnt);
+      let x = rect.x;
+      let y = rect.y;
+      let w = rect.width;
+      let h = rect.height;
+
+      // save bounding box coordinates with padding of 10
+      bboxes.push([x - 10, y - 10, x + w + 10, y + h + 10]);
+    }
+    // merge overlapping boxes in bboxes to one bigger box 
+    mergeBboxes(bboxes);
+    setBboxes(bboxes);
+
+    if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
+      imgAbnormalBinary.delete();
+    }
+    setImgAbnormalBinary(image_abnormal_binary);
+
+    // cleanup
+    contours.delete();
+    hierarchy.delete();
+  }
+
+  function autoThreshold(image_abnormal, ratio = 0.8) {
     let minMax: any = (cv as any).minMaxLoc(image_abnormal);
-    let threshold = Math.floor((minMax.maxVal - minMax.minVal) * 0.5);
+    let threshold = Math.floor((minMax.maxVal - minMax.minVal) * ratio);
     setThreshold(threshold);
     return threshold;
   }
@@ -145,6 +176,9 @@ function App() {
 
     // load images
     let im1 = cv.imread(img1);
+    // save original image size
+    // let originalSize1 = new cv.Size(im1.cols, im1.rows);
+
     // resize to w=1024, keep same aspect ratio
     // calculate new height
     if (resolution !== "original") {
@@ -152,6 +186,13 @@ function App() {
       let newHeight = Math.round((newW / im1.cols) * im1.rows);
       let im1Resized = new cv.Mat();
       cv.resize(im1, im1Resized, new cv.Size(newW, newHeight), 0, 0, cv.INTER_AREA);
+
+      // resize back to originalSize
+      // let im1Resized2 = new cv.Mat();
+      // cv.resize(im1Resized, im1Resized2, originalSize1, 0, 0, cv.INTER_AREA);
+      // im1Resized.delete();
+      // im1Resized = im1Resized2;
+
       im1.delete();
       im1 = im1Resized;
     }
@@ -163,6 +204,9 @@ function App() {
     im1 = im1Blur;
 
     let im2 = cv.imread(img2);
+    // save original image size
+    // let originalSize2 = new cv.Size(im2.cols, im2.rows);
+
     // resize to w=1024, keep same aspect ratio
     // calculate new height
     if (resolution !== "original") {
@@ -170,6 +214,13 @@ function App() {
       let newHeight = Math.round((newW / im2.cols) * im2.rows);
       let im2Resized = new cv.Mat();
       cv.resize(im2, im2Resized, new cv.Size(newW, newHeight), 0, 0, cv.INTER_AREA);
+
+      // resize back to originalSize
+      // let im2Resized2 = new cv.Mat();
+      // cv.resize(im2Resized, im2Resized2, originalSize2, 0, 0, cv.INTER_AREA);
+      // im2Resized.delete();
+      // im2Resized = im2Resized2;
+
       im2.delete();
       im2 = im2Resized;
     }
@@ -266,6 +317,28 @@ function App() {
       points2.push(keypoints2.get(good_matches.get(i).trainIdx).pt.y);
     }
 
+    // original size
+    let originalSize1 = new cv.Size(im1.cols, im1.rows);
+    let originalSize2 = new cv.Size(im2.cols, im2.rows);
+
+    // reload images
+    im1.delete()
+    im1 = cv.imread(img1);
+    im2.delete()
+    im2 = cv.imread(img2);
+
+    // new size
+    let newSize1 = new cv.Size(im1.cols, im1.rows);
+    let newSize2 = new cv.Size(im2.cols, im2.rows);
+
+    // adjust points coordinates to reflect resizing
+    for (let i = 0; i < points1.length; i += 2) {
+      points1[i] = points1[i] * newSize1.width / originalSize1.width;
+      points1[i + 1] = points1[i + 1] * newSize1.height / originalSize1.height;
+      points2[i] = points2[i] * newSize2.width / originalSize2.width;
+      points2[i + 1] = points2[i + 1] * newSize2.height / originalSize2.height;
+    }
+
     const mat1 = new cv.Mat(points1.length, 1, cv.CV_32FC2);
     mat1.data32F.set(points1);
     const mat2 = new cv.Mat(points2.length, 1, cv.CV_32FC2);
@@ -288,6 +361,30 @@ function App() {
 
     // Use homography to warp image
     let image_B_final_result = new cv.Mat();
+
+    // // original size
+    // let originalSize = new cv.Size(im2.cols, im2.rows);
+
+    // // reload images
+    // im1.delete()
+    // im1 = cv.imread(img1);
+    // im2.delete()
+    // im2 = cv.imread(img2);
+
+    // // new size
+    // let newSize = new cv.Size(im2.cols, im2.rows);
+
+    // // adjust homography matrix to account for the fact that the size has changed
+    // h.data64F[0] = h.data64F[0] * (newSize.width / originalSize.width);
+    // h.data64F[1] = h.data64F[1] * (newSize.width / originalSize.width);
+    // h.data64F[2] = h.data64F[2] * (newSize.width / originalSize.width);
+    // h.data64F[3] = h.data64F[3] * (newSize.height / originalSize.height);
+    // h.data64F[4] = h.data64F[4] * (newSize.height / originalSize.height);
+    // h.data64F[5] = h.data64F[5] * (newSize.height / originalSize.height);
+    // h.data64F[6] = h.data64F[6] * (newSize.width / originalSize.width);
+    // h.data64F[7] = h.data64F[7] * (newSize.height / originalSize.height);
+
+    // wrap image with homography
     cv.warpPerspective(im1, image_B_final_result, h, im2.size());
 
     cv.imshow(imageAlignedRef.current, image_B_final_result);
@@ -310,6 +407,7 @@ function App() {
     // expand the black pixels of white_image_warped_gray
     let kernel = cv.Mat.ones(15, 15, cv.CV_8U);
     cv.dilate(white_image_warped_gray, white_image_warped_gray, kernel);
+    kernel.delete();
 
     // remove pixel where white_image_warped_gray is white
     // cv.bitwise_not(white_image_warped_gray, white_image_warped_gray);
@@ -355,33 +453,39 @@ function App() {
 
     // find the abnormality in RGB channel of im2 and image_B_final_result
     // get rgb channels of im2
-    let im2_channels = new cv.MatVector();
-    cv.split(im2_normalized, im2_channels);
+    // let im2_channels = new cv.MatVector();
+    // cv.split(im2_normalized, im2_channels);
 
-    let image_B_final_result_channels = new cv.MatVector();
-    cv.split(image_B_final_result_normalized, image_B_final_result_channels);
+    // let image_B_final_result_channels = new cv.MatVector();
+    // cv.split(image_B_final_result_normalized, image_B_final_result_channels);
 
-    const image_abnormal_is = [];
-    for (let i = 0; i < 3; i++) {
-      let im2_i = im2_channels.get(i);
-      // get rgb channels of image_B_final_result
-      let image_B_final_result_i = image_B_final_result_channels.get(i);
-      // apply white_image_warped_gray as a mask to image_B_final_result_i and im2_i
+    // convert im2_normalized, image_B_final_result_normalized to gray scale single channel
+    let im2_gray = new cv.Mat();
+    cv.cvtColor(im2_normalized, im2_gray, cv.COLOR_BGR2GRAY, 0);
+    let image_B_final_result_gray = new cv.Mat();
+    cv.cvtColor(image_B_final_result_normalized, image_B_final_result_gray, cv.COLOR_BGR2GRAY, 0);
 
-      // subtract the two rgb channels
-      let image_abnormal_i = new cv.Mat();
-      cv.absdiff(im2_i, image_B_final_result_i, image_abnormal_i);
-      // // subtract the two rgb channels
-      // cv.subtract(im2_i, image_B_final_result_i, image_abnormal_i);
-      // // keep only positive values
-      // cv.threshold(image_abnormal_i, image_abnormal_i, 0, 255, cv.THRESH_TOZERO);
+    // blur
+    cv.GaussianBlur(im2_gray, im2_gray, new cv.Size(31, 31), 0, 0, cv.BORDER_DEFAULT);
+    cv.GaussianBlur(image_B_final_result_gray, image_B_final_result_gray, new cv.Size(31, 31), 0, 0, cv.BORDER_DEFAULT);
 
-      image_abnormal_is.push(image_abnormal_i);
-    }
-    // average image_abnormal_is across the 3 channels
     let image_abnormal = new cv.Mat();
-    cv.addWeighted(image_abnormal_is[0], 1 / 3, image_abnormal_is[1], 1 / 3, 0, image_abnormal);
-    cv.addWeighted(image_abnormal, 1, image_abnormal_is[2], 1 / 3, 0, image_abnormal);
+    let image_abnormal_neg = new cv.Mat();
+    // cv.absdiff(im2_gray, image_B_final_result_gray, image_abnormal);
+    // subtract the two images and split positive and negative values
+    cv.subtract(image_B_final_result_gray, im2_gray, image_abnormal);
+    cv.subtract(im2_gray, image_B_final_result_gray, image_abnormal_neg);
+    
+    image_B_final_result_gray.delete();
+    im2_gray.delete();
+
+    // blur
+    cv.GaussianBlur(image_abnormal, image_abnormal, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+
+    // reduce lines features
+    const kernel2 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+    cv.morphologyEx(image_abnormal, image_abnormal, cv.MORPH_OPEN, kernel2);
+    kernel2.delete();
 
     // remove edges from image_abnormal
     let white_image_warped_gray_not = new cv.Mat();
@@ -396,53 +500,16 @@ function App() {
 
     cv.imshow(imageAbnormalRef.current, image_abnormal);
 
-    // binarize image_abnormal
-    let image_abnormal_binary = new cv.Mat();
     if (threshold === 0) {
       // find threshold
       // calculate max of image_abnormal
-      threshold = autoThreshold(image_abnormal);
+      threshold = autoThreshold(image_abnormal, autoRatio);
     }
-    cv.threshold(image_abnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
 
-
-    // cv.bitwise_and(image_abnormal_binary, white_image_warped_gray, image_abnormal_binary);
-
-    // convert to 4 channels and display
-    // let image_abnormal_rgb_4channels = new cv.Mat();
-    // cv.cvtColor(image_abnormal_binary, image_abnormal_rgb_4channels, cv.COLOR_GRAY2RGBA);
-    cv.imshow(imageDiffRef.current, image_abnormal_binary);
-
-    // find location of abnormality in image_abnormal_binary
-    let contours: any = new cv.MatVector();
-    let hierarchy = new cv.Mat();
-    cv.findContours(image_abnormal_binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-    console.log("contours.size()", contours.size())
+    thresholdDefects(image_abnormal, threshold);
+    
     // copy im2 to image_abnormal_binary_rgb
     let image_abnormal_binary_rgb = im2.clone();
-    // draw image_abnormal_binary_rgb with im2
-    // im2.copyTo(image_abnormal_binary_rgb);
-
-    let bboxes = [];
-    // for each contours, find the bounding rectangle
-    for (let i = 0; i < contours.size(); ++i) {
-      let cnt = contours.get(i);
-      let rect = cv.boundingRect(cnt);
-      let x = rect.x;
-      let y = rect.y;
-      let w = rect.width;
-      let h = rect.height;
-
-      // save bounding box coordinates with padding of 10
-      bboxes.push([x - 10, y - 10, x + w + 10, y + h + 10]);
-    }
-
-    // merge overlapping boxes in bboxes to one bigger box 
-    mergeBboxes(bboxes);
-
-    setBboxes(bboxes);
-    setImgAbnormalBinary(image_abnormal_binary);
     setImgAbnormalRGB(image_abnormal_binary_rgb);
     setImgAbnormal(image_abnormal);
 
@@ -475,15 +542,25 @@ function App() {
 
     image_B_final_result_normalized.delete();
     im2_normalized.delete();
-    im2_channels.delete();
-    image_B_final_result_channels.delete();
 
-    image_abnormal_is.forEach(image_abnormal_i => image_abnormal_i.delete());
     // image_abnormal.delete();
 
-    kernel.delete();
-    contours.delete();
-    hierarchy.delete();
+  }
+
+  const renderBboxesOverlayClean = () => {
+    if (cleanImg.isDeleted()) return;
+
+    // create a new copy of imgAbnormalRGB
+    let imgCleanOverlay = cleanImg.clone();
+    // draw bounding boxes
+    for (let i = 0; i < bboxes.length; i++) {
+      let bbox = bboxes[i];
+      cv.rectangle(imgCleanOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [255, 0, 0, 255], 2, cv.LINE_AA, 0);
+    }
+
+    cv.imshow(imageAbnormalOverlayRef.current, imgCleanOverlay);
+    // imgAbnormalRGBOverlay.delete();
+    imgCleanOverlay.delete();
   }
 
   const renderBboxesOverlay = () => {
@@ -532,8 +609,12 @@ function App() {
   }
 
   useEffect(() => {
-    renderBboxesOverlay();
-  }, [bboxes])
+    if (mode === "clean") {
+      renderBboxesOverlayClean();
+    } else {
+      renderBboxesOverlay();
+    }
+  }, [bboxes, bboxesNegative])
   // useEffect(() => {
   //   if (!img1 || !img2) return;
   //   setThreshold(0);
@@ -567,6 +648,17 @@ function App() {
 
   }
 
+  function downloadImage(imageAbnormalOverlayRef: MutableRefObject<HTMLCanvasElement>) {
+    // download image from canvas
+    const canvas = imageAbnormalOverlayRef.current;
+    const image = canvas.toDataURL("image/png", 1.0).replace("image/png", "image/octet-stream");
+    const link = document.createElement('a');
+    // with time stamp in the name
+    link.download = `image_${new Date().getTime()}.png`;
+    link.href = image;
+    link.click();
+  }
+
   return (
     <>
       {/* sticky footer at the bottom */}
@@ -577,7 +669,8 @@ function App() {
             className={classNames(mode === 'clean' ? 'text-white bg-blue-500' : 'text-black bg-grey-500', "rounded-md border-0 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400")} onClick={() => {
               // show imageAbnormal
               setMode("clean");
-              cv.imshow(imageAbnormalOverlayRef.current, cleanImg);
+              renderBboxesOverlayClean();
+              // cv.imshow(imageAbnormalOverlayRef.current, cleanImg);
             }}>Clean</button>
           {/* <button type="button"
             className="rounded bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
@@ -615,7 +708,7 @@ function App() {
               <button type="button"
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold - 1);
-                  thresholdDefects(threshold - 1);
+                  thresholdDefects(imgAbnormal, threshold - 1);
                 }}>-</button>
               {/* display threshold value */}
               <label htmlFor="threshold" className="text-gray-900 font-semibold">{threshold}</label>
@@ -624,14 +717,22 @@ function App() {
               <button type="button"
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold + 1);
-                  thresholdDefects(threshold + 1);
+                  thresholdDefects(imgAbnormal, threshold + 1);
                 }}>+</button>
               {/* auto detect threshold button */}
               <button type="button"
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-                  const t = autoThreshold(imgAbnormal);
-                  thresholdDefects(t);
-                }}>Auto</button>
+                  setAutoRatio(0.6);
+                  const t = autoThreshold(imgAbnormal, 0.6);
+                  thresholdDefects(imgAbnormal, t);
+                }}>0.6</button>
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  setAutoRatio(0.8);
+                  const t = autoThreshold(imgAbnormal, 0.8);
+                  thresholdDefects(imgAbnormal, t);
+                }}>0.8</button>
+
             </div>
             <label htmlFor="threshold" className="text-gray-900 font-semibold">Threshold</label>
           </div>
@@ -782,6 +883,13 @@ function App() {
 
           {/* canvas for display, the canvas should be on top of one another */}
           <div className="relative">
+            {/* download image from canvas button */}
+            <button type="button"
+              className="absolute top-0 right-0 rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                downloadImage(imageAbnormalOverlayRef);
+              }
+              }>Download</button>
+            {/* canvas for displaying the image */}
             <canvas className="w-full max-h-screen-1/3"
               ref={imageAbnormalOverlayRef} onClick={canvasClickHandler}></canvas>
           </div>
@@ -798,6 +906,8 @@ function App() {
             <canvas className="w-full" ref={imageAbnormalRef} id="imageAbnormal" width="300" height="300"></canvas>
             <label>Binary Threshold</label>
             <canvas className="w-full" ref={imageDiffRef} id="imageDiff" width="300" height="300"></canvas>
+            <label>Binary Threshold Negative</label>
+            <canvas className="w-full" ref={imageDiffNegativeRef} id="imageDiffNegative" width="300" height="300"></canvas>
           </div>
         </main>
       </div>
