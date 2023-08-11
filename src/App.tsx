@@ -2,11 +2,61 @@
 import { MutableRefObject, useEffect, useRef, useState } from 'react'
 import './App.css'
 import cv, { } from "@techstark/opencv-js";
-import { BugAntIcon, ArrowsRightLeftIcon } from '@heroicons/react/20/solid';
+import { BugAntIcon, ArrowsRightLeftIcon, ArrowDownOnSquareIcon } from '@heroicons/react/20/solid';
 import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(' ')
+}
+
+const options = [0, .25, .5, .8, .9, 1.0];
+
+function computeCDF(hist) {
+  let cdf = new Array(256).fill(0);
+  cdf[0] = hist.data32F[0];
+  for (let i = 1; i < 256; i++) {
+      cdf[i] = cdf[i - 1] + hist.data32F[i];
+  }
+  return cdf;
+}
+
+function histogramMatching(src, reference, dst) {
+  let srcHist = new cv.Mat(), refHist = new cv.Mat();
+  let mask = new cv.Mat();
+  let dsize = new cv.Size(256, 1);
+  let ranges = [0, 256];
+  let histSize = [256];
+
+  let srcMatVec = new cv.MatVector();
+  let refMatVec = new cv.MatVector();
+  srcMatVec.push_back(src);
+  refMatVec.push_back(reference);
+  cv.calcHist(srcMatVec, [0], mask, srcHist, histSize, ranges);
+  cv.calcHist(refMatVec, [0], mask, refHist, histSize, ranges);
+
+  let srcCDF = computeCDF(srcHist);
+  let refCDF = computeCDF(refHist);
+
+  let lut = new Array(256).fill(0);
+  for (let i = 0; i < 256; i++) {
+      let diff = Array(256).fill(255);
+      for (let j = 0; j < 256; j++) {
+          diff[j] = Math.abs(srcCDF[i] - refCDF[j]);
+      }
+      lut[i] = diff.indexOf(Math.min(...diff));
+  }
+
+  for (let i = 0; i < src.rows; i++) {
+      for (let j = 0; j < src.cols; j++) {
+          dst.data[i * src.cols + j] = lut[src.data[i * src.cols + j]];
+      }
+  }
+
+  srcHist.delete();
+  refHist.delete();
+  mask.delete();
+  srcMatVec.delete();
+  refMatVec.delete();
 }
 
 function App() {
@@ -16,9 +66,13 @@ function App() {
   const imageDiffNegativeRef = useRef<HTMLCanvasElement>(null);
   const imageMaskRef = useRef<HTMLCanvasElement>(null);
   const imageAbnormalRef = useRef<HTMLCanvasElement>(null);
+  const imageAbnormalNegRef = useRef<HTMLCanvasElement>(null);
   const imageAbnormalOverlayRef = useRef<HTMLCanvasElement>(null);
   const [numPixels, setNumPixels] = useState<number>(0);
   const [numBoxes, setNumBoxes] = useState<number>(0);
+  const [numPixelsNegative, setNumPixelsNegative] = useState<number>(0);
+  const [numBoxesNegative, setNumBoxesNegative] = useState<number>(0);
+
   const [bboxes, setBboxes] = useState<any>([]);
   const [bboxesNegative, setBboxesNegative] = useState<any>([]);
 
@@ -28,29 +82,25 @@ function App() {
   const [imgAbnormalRGB, setImgAbnormalRGB] = useState<any>(null);
   const [imgAbnormal, setImgAbnormal] = useState<any>(null);
   const [imgAbnormalBinaryNegative, setImgAbnormalBinaryNegative] = useState<any>(null);
-  const [imgAbnormalRGBNegative, setImgAbnormalRGBNegative] = useState<any>(null);
   const [imgAbnormalNegative, setImgAbnormalNegative] = useState<any>(null);
 
-  
   const [img1, setImg1] = useState<HTMLImageElement | null>(null);
   const [img2, setImg2] = useState<HTMLImageElement | null>(null);
   const [img1URL, setImg1URL] = useState<any>(null);
   const [img2URL, setImg2URL] = useState<any>(null);
   const [threshold, setThreshold] = useState<number>(0);
+  const [thresholdNegative, setThresholdNegative] = useState<number>(0);
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
   const [mode, setMode] = useState<string>("defective");
   const [method, setMethod] = useState<string>("ORB");
-  const [resolution, setResolution] = useState<number>(512);
+  const [resolution, setResolution] = useState<string>("original");
   const [autoRatio, setAutoRatio] = useState<number>(0.8);
+  const [autoRatioNegative, setAutoRatioNegative] = useState<number>(0.8);
 
   const input1Ref = useRef<HTMLInputElement>(null);
   const input2Ref = useRef<HTMLInputElement>(null);
 
   function thresholdDefectsNegative(image_abnormal, threshold = 0) {
-    // if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
-    //   imgAbnormalBinaryNegative.delete();
-    // }
-
     // binarize image_abnormal
     let image_abnormal_binary = new cv.Mat();
     cv.threshold(image_abnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
@@ -77,6 +127,9 @@ function App() {
     mergeBboxes(bboxes);
     setBboxesNegative(bboxes);
 
+    if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+      imgAbnormalBinaryNegative.delete();
+    }
     setImgAbnormalBinaryNegative(image_abnormal_binary);
 
     // cleanup
@@ -124,7 +177,6 @@ function App() {
   function autoThreshold(image_abnormal, ratio = 0.8) {
     let minMax: any = (cv as any).minMaxLoc(image_abnormal);
     let threshold = Math.floor((minMax.maxVal - minMax.minVal) * ratio);
-    setThreshold(threshold);
     return threshold;
   }
 
@@ -154,82 +206,72 @@ function App() {
     }
   }
 
-  function computeDefects(threshold = 0, method = "ORB", resolution = "512", knnDistance_option = 0.7) {
+  function computeDefects(img1, img2, method = "ORB", resolution = "512", knnDistance_option = 0.7) {
     // set seed to keep result consistent
     cv.setRNGSeed(0);
 
-    if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
-      imgAbnormalBinary.delete();
-    }
-    if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
-      imgAbnormalRGB.delete();
-    }
-    if (imgAbnormal && !imgAbnormal.isDeleted()) {
-      imgAbnormal.delete();
-    }
-    if (cleanImg && !cleanImg.isDeleted()) {
-      cleanImg.delete();
-    }
-    if (defectImg && !defectImg.isDeleted()) {
-      defectImg.delete();
-    }
+    // if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
+    //   imgAbnormalBinary.delete();
+    // }
+    // if (imgAbnormal && !imgAbnormal.isDeleted()) {
+    //   imgAbnormal.delete();
+    // }
+    // if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+    //   imgAbnormalBinaryNegative.delete();
+    // }
+    // if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
+    //   imgAbnormalNegative.delete();
+    // }
+    // if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
+    //   imgAbnormalRGB.delete();
+    // }
+    // if (cleanImg && !cleanImg.isDeleted()) {
+    //   cleanImg.delete();
+    // }
+    // if (defectImg && !defectImg.isDeleted()) {
+    //   defectImg.delete();
+    // }
 
     // load images
     let im1 = cv.imread(img1);
-    // save original image size
-    // let originalSize1 = new cv.Size(im1.cols, im1.rows);
-
-    // resize to w=1024, keep same aspect ratio
-    // calculate new height
     if (resolution !== "original") {
       let newW = parseInt(resolution)
       let newHeight = Math.round((newW / im1.cols) * im1.rows);
       let im1Resized = new cv.Mat();
       cv.resize(im1, im1Resized, new cv.Size(newW, newHeight), 0, 0, cv.INTER_AREA);
-
-      // resize back to originalSize
-      // let im1Resized2 = new cv.Mat();
-      // cv.resize(im1Resized, im1Resized2, originalSize1, 0, 0, cv.INTER_AREA);
-      // im1Resized.delete();
-      // im1Resized = im1Resized2;
-
       im1.delete();
       im1 = im1Resized;
     }
-    console.log("im1", im1.size());
-    // blur im1 to remove noise
+    // blur to remove noise
     let im1Blur = new cv.Mat();
     cv.GaussianBlur(im1, im1Blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
     im1.delete();
     im1 = im1Blur;
+    // intensity normalization
+    let im1Normalized = new cv.Mat();
+    cv.normalize(im1, im1Normalized, 0, 255, cv.NORM_MINMAX, cv.CV_8UC1);
+    im1.delete();
+    im1 = im1Normalized;
 
     let im2 = cv.imread(img2);
-    // save original image size
-    // let originalSize2 = new cv.Size(im2.cols, im2.rows);
-
-    // resize to w=1024, keep same aspect ratio
-    // calculate new height
     if (resolution !== "original") {
       let newW = parseInt(resolution)
       let newHeight = Math.round((newW / im2.cols) * im2.rows);
       let im2Resized = new cv.Mat();
       cv.resize(im2, im2Resized, new cv.Size(newW, newHeight), 0, 0, cv.INTER_AREA);
-
-      // resize back to originalSize
-      // let im2Resized2 = new cv.Mat();
-      // cv.resize(im2Resized, im2Resized2, originalSize2, 0, 0, cv.INTER_AREA);
-      // im2Resized.delete();
-      // im2Resized = im2Resized2;
-
       im2.delete();
       im2 = im2Resized;
     }
-    console.log("im2", im2.size());
-    // blur im2 to remove noise
+    // blur to remove noise
     let im2Blur = new cv.Mat();
     cv.GaussianBlur(im2, im2Blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
     im2.delete();
     im2 = im2Blur;
+    // intensity normalization
+    let im2Normalized = new cv.Mat();
+    cv.normalize(im2, im2Normalized, 0, 255, cv.NORM_MINMAX, cv.CV_8UC1);
+    im2.delete();
+    im2 = im2Normalized;
 
     // Convert images to grayscale
     let im1Gray = new cv.Mat();
@@ -278,27 +320,12 @@ function App() {
       let match = matches.get(i);
       let dMatch1 = match.get(0);
       let dMatch2 = match.get(1);
-      //console.log("[", i, "] ", "dMatch1: ", dMatch1, "dMatch2: ", dMatch2);
       // ratio test
       if (dMatch1.distance <= dMatch2.distance * knnDistance_option) {
-        //console.log("***Good Match***", "dMatch1.distance: ", dMatch1.distance, "was less than or = to: ", "dMatch2.distance * parseFloat(knnDistance_option)", dMatch2.distance * parseFloat(knnDistance_option), "dMatch2.distance: ", dMatch2.distance, "knnDistance", knnDistance_option);
         good_matches.push_back(dMatch1);
         counter++;
       }
     }
-
-    // console.log("keeping ", counter, " points in good_matches vector out of ", matches.size(), " contained in this match vector:", matches);
-    // console.log("here are first 5 matches");
-    // for (let t = 0; t < matches.size(); ++t) {
-    //   console.log("[" + t + "]", "matches: ", matches.get(t));
-    //   if (t === 5) { break; }
-    // }
-
-    // console.log("here are first 5 good_matches");
-    // for (let r = 0; r < good_matches.size(); ++r) {
-    //   console.log("[" + r + "]", "good_matches: ", good_matches.get(r));
-    //   if (r === 5) { break; }
-    // }
 
     // Draw top matches
     let imMatches = new cv.Mat();
@@ -332,11 +359,14 @@ function App() {
     let newSize2 = new cv.Size(im2.cols, im2.rows);
 
     // adjust points coordinates to reflect resizing
-    for (let i = 0; i < points1.length; i += 2) {
-      points1[i] = points1[i] * newSize1.width / originalSize1.width;
-      points1[i + 1] = points1[i + 1] * newSize1.height / originalSize1.height;
-      points2[i] = points2[i] * newSize2.width / originalSize2.width;
-      points2[i + 1] = points2[i + 1] * newSize2.height / originalSize2.height;
+    // skip if original size is selected
+    if (resolution !== "original") {
+      for (let i = 0; i < points1.length; i += 2) {
+        points1[i] = points1[i] * newSize1.width / originalSize1.width;
+        points1[i + 1] = points1[i + 1] * newSize1.height / originalSize1.height;
+        points2[i] = points2[i] * newSize2.width / originalSize2.width;
+        points2[i + 1] = points2[i + 1] * newSize2.height / originalSize2.height;
+      }
     }
 
     const mat1 = new cv.Mat(points1.length, 1, cv.CV_32FC2);
@@ -362,34 +392,17 @@ function App() {
     // Use homography to warp image
     let image_B_final_result = new cv.Mat();
 
-    // // original size
-    // let originalSize = new cv.Size(im2.cols, im2.rows);
-
-    // // reload images
-    // im1.delete()
-    // im1 = cv.imread(img1);
-    // im2.delete()
-    // im2 = cv.imread(img2);
-
-    // // new size
-    // let newSize = new cv.Size(im2.cols, im2.rows);
-
-    // // adjust homography matrix to account for the fact that the size has changed
-    // h.data64F[0] = h.data64F[0] * (newSize.width / originalSize.width);
-    // h.data64F[1] = h.data64F[1] * (newSize.width / originalSize.width);
-    // h.data64F[2] = h.data64F[2] * (newSize.width / originalSize.width);
-    // h.data64F[3] = h.data64F[3] * (newSize.height / originalSize.height);
-    // h.data64F[4] = h.data64F[4] * (newSize.height / originalSize.height);
-    // h.data64F[5] = h.data64F[5] * (newSize.height / originalSize.height);
-    // h.data64F[6] = h.data64F[6] * (newSize.width / originalSize.width);
-    // h.data64F[7] = h.data64F[7] * (newSize.height / originalSize.height);
-
     // wrap image with homography
     cv.warpPerspective(im1, image_B_final_result, h, im2.size());
-
     cv.imshow(imageAlignedRef.current, image_B_final_result);
 
+    if (cleanImg && !cleanImg.isDeleted()) {
+      cleanImg.delete();
+    }
     setCleanImg(image_B_final_result);
+    if (defectImg && !defectImg.isDeleted()) {
+      defectImg.delete();
+    }
     setDefectImg(im2);
 
     // create a white image
@@ -414,13 +427,17 @@ function App() {
 
     cv.imshow(imageMaskRef.current, white_image_warped_gray);
 
-    // normalize image_B_final_result and im2
-    // 1. intensity normalization
+    // intensity normalization
     let image_B_final_result_normalized = new cv.Mat();
     cv.normalize(image_B_final_result, image_B_final_result_normalized, 0, 255, cv.NORM_MINMAX, cv.CV_8UC3);
     let im2_normalized = new cv.Mat();
     cv.normalize(im2, im2_normalized, 0, 255, cv.NORM_MINMAX, cv.CV_8UC3);
-    // 2. histrogram equalization
+
+    // blur
+    cv.GaussianBlur(image_B_final_result_normalized, image_B_final_result_normalized, { width: 5, height: 5 }, 0, 0, cv.BORDER_DEFAULT);
+    cv.GaussianBlur(im2_normalized, im2_normalized, { width: 5, height: 5 }, 0, 0, cv.BORDER_DEFAULT);
+
+    // histrogram normalization
     // let image_B_final_result_normalized_hist = new cv.Mat();
     // cv.cvtColor(image_B_final_result_normalized, image_B_final_result_normalized_hist, cv.COLOR_BGR2HSV, 0);
     // let image_B_final_result_normalized_hist_channels = new cv.MatVector();
@@ -428,6 +445,8 @@ function App() {
     // cv.equalizeHist(image_B_final_result_normalized_hist_channels.get(2), image_B_final_result_normalized_hist_channels.get(2));
     // cv.merge(image_B_final_result_normalized_hist_channels, image_B_final_result_normalized_hist);
     // cv.cvtColor(image_B_final_result_normalized_hist, image_B_final_result_normalized_hist, cv.COLOR_HSV2BGR, 0);
+    // image_B_final_result_normalized.delete();
+    // image_B_final_result_normalized = image_B_final_result_normalized_hist
 
     // let im2_normalized_hist = new cv.Mat();
     // cv.cvtColor(im2_normalized, im2_normalized_hist, cv.COLOR_BGR2HSV, 0);
@@ -436,29 +455,12 @@ function App() {
     // cv.equalizeHist(im2_normalized_hist_channels.get(2), im2_normalized_hist_channels.get(2));
     // cv.merge(im2_normalized_hist_channels, im2_normalized_hist);
     // cv.cvtColor(im2_normalized_hist, im2_normalized_hist, cv.COLOR_HSV2BGR, 0);
+    // im2_normalized.delete();
+    // im2_normalized = im2_normalized_hist;
 
-    // 3. gamma correction
-    // let image_B_final_result_normalized_hist_gamma = new cv.Mat();
-    // let im2_normalized_hist_gamma = new cv.Mat();
-    // let gamma = 0.5;
-    // let inverse_gamma = 1.0 / gamma;
-    // let lut = new cv.Mat(1, 256, cv.CV_8UC1);
-    // for (let i = 0; i < 256; i++) {
-    //   lut.data[i] = Math.pow(i / 255.0, inverse_gamma) * 255.0;
-    // }
-    // cv.LUT(image_B_final_result_normalized_hist, lut, image_B_final_result_normalized_hist_gamma);
-    // cv.LUT(im2_normalized_hist, lut, im2_normalized_hist_gamma);
-
-
-
-    // find the abnormality in RGB channel of im2 and image_B_final_result
-    // get rgb channels of im2
-    // let im2_channels = new cv.MatVector();
-    // cv.split(im2_normalized, im2_channels);
-
-    // let image_B_final_result_channels = new cv.MatVector();
-    // cv.split(image_B_final_result_normalized, image_B_final_result_channels);
-
+    // histrogram matching image_B_final_result_normalized to im2_normalized    
+    histogramMatching(image_B_final_result_normalized, im2_normalized, image_B_final_result_normalized);
+    
     // convert im2_normalized, image_B_final_result_normalized to gray scale single channel
     let im2_gray = new cv.Mat();
     cv.cvtColor(im2_normalized, im2_gray, cv.COLOR_BGR2GRAY, 0);
@@ -466,8 +468,12 @@ function App() {
     cv.cvtColor(image_B_final_result_normalized, image_B_final_result_gray, cv.COLOR_BGR2GRAY, 0);
 
     // blur
-    cv.GaussianBlur(im2_gray, im2_gray, new cv.Size(31, 31), 0, 0, cv.BORDER_DEFAULT);
-    cv.GaussianBlur(image_B_final_result_gray, image_B_final_result_gray, new cv.Size(31, 31), 0, 0, cv.BORDER_DEFAULT);
+    cv.GaussianBlur(im2_gray, im2_gray, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+    cv.GaussianBlur(image_B_final_result_gray, image_B_final_result_gray, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+
+    // median blur
+    cv.medianBlur(im2_gray, im2_gray, 5);
+    cv.medianBlur(image_B_final_result_gray, image_B_final_result_gray, 5);
 
     let image_abnormal = new cv.Mat();
     let image_abnormal_neg = new cv.Mat();
@@ -475,23 +481,13 @@ function App() {
     // subtract the two images and split positive and negative values
     cv.subtract(image_B_final_result_gray, im2_gray, image_abnormal);
     cv.subtract(im2_gray, image_B_final_result_gray, image_abnormal_neg);
-    
+
     image_B_final_result_gray.delete();
     im2_gray.delete();
 
-    // blur
-    cv.GaussianBlur(image_abnormal, image_abnormal, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-
-    // reduce lines features
-    const kernel2 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
-    cv.morphologyEx(image_abnormal, image_abnormal, cv.MORPH_OPEN, kernel2);
-    kernel2.delete();
-
-    // remove edges from image_abnormal
-    let white_image_warped_gray_not = new cv.Mat();
-    cv.bitwise_not(white_image_warped_gray, white_image_warped_gray_not);
-    cv.bitwise_and(image_abnormal, white_image_warped_gray_not, image_abnormal);
-    white_image_warped_gray_not.delete();
+    // post process image_abnormal
+    postProcessImageAbnormal(image_abnormal, white_image_warped_gray);
+    postProcessImageAbnormal(image_abnormal_neg, white_image_warped_gray);
 
     // // replace edges of image_abnormal with mean of image_abnormal
     // let mean = cv.mean(image_abnormal);
@@ -499,19 +495,36 @@ function App() {
     // cv.add(image_abnormal, white_image_warped_gray_mean, image_abnormal);
 
     cv.imshow(imageAbnormalRef.current, image_abnormal);
+    cv.imshow(imageAbnormalNegRef.current, image_abnormal_neg);
 
-    if (threshold === 0) {
-      // find threshold
-      // calculate max of image_abnormal
-      threshold = autoThreshold(image_abnormal, autoRatio);
-    }
+    // if (threshold === 0) {
+    //   // find threshold
+    //   // calculate max of image_abnormal
+    //   threshold = autoThreshold(image_abnormal, autoRatio);
+    // }
 
+    let threshold = autoThreshold(image_abnormal, autoRatio);
+    setThreshold(threshold);
     thresholdDefects(image_abnormal, threshold);
-    
+    if (imgAbnormal && !imgAbnormal.isDeleted()) {
+      imgAbnormal.delete();
+    }
+    setImgAbnormal(image_abnormal);
+
+    let thresholdNegative = autoThreshold(image_abnormal_neg, autoRatioNegative);
+    setThresholdNegative(thresholdNegative);
+    thresholdDefectsNegative(image_abnormal_neg, thresholdNegative);
+    if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
+      imgAbnormalNegative.delete();
+    }
+    setImgAbnormalNegative(image_abnormal_neg);
+
     // copy im2 to image_abnormal_binary_rgb
     let image_abnormal_binary_rgb = im2.clone();
+    if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
+      imgAbnormalRGB.delete();
+    }
     setImgAbnormalRGB(image_abnormal_binary_rgb);
-    setImgAbnormal(image_abnormal);
 
     // clean up
     im1.delete();
@@ -550,23 +563,27 @@ function App() {
   const renderBboxesOverlayClean = () => {
     if (cleanImg.isDeleted()) return;
 
-    // create a new copy of imgAbnormalRGB
     let imgCleanOverlay = cleanImg.clone();
     // draw bounding boxes
     for (let i = 0; i < bboxes.length; i++) {
       let bbox = bboxes[i];
       cv.rectangle(imgCleanOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [255, 0, 0, 255], 2, cv.LINE_AA, 0);
     }
+    // draw bboxesNegative
+    for (let i = 0; i < bboxesNegative.length; i++) {
+      let bbox = bboxesNegative[i];
+      cv.rectangle(imgCleanOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [0, 0, 255, 255], 2, cv.LINE_AA, 0);
+    }
 
     cv.imshow(imageAbnormalOverlayRef.current, imgCleanOverlay);
-    // imgAbnormalRGBOverlay.delete();
     imgCleanOverlay.delete();
   }
 
   const renderBboxesOverlay = () => {
-    if (!imageAbnormalOverlayRef || !imageAbnormalOverlayRef.current || !imgAbnormalRGB || !imgAbnormalBinary) return;
-    if (imgAbnormalRGB.isDeleted()) return;
-    if (imgAbnormalBinary.isDeleted()) return;
+    if (!imageAbnormalOverlayRef.current || !imageAbnormalOverlayRef.current) return;
+    if (!imgAbnormalRGB || imgAbnormalRGB.isDeleted()) return;
+    if (!imgAbnormalBinary || imgAbnormalBinary.isDeleted()) return;
+    if (!imgAbnormalBinaryNegative || imgAbnormalBinaryNegative.isDeleted()) return;
 
     console.log("bboxes", bboxes.length)
     // create a new copy of imgAbnormalRGB
@@ -576,13 +593,15 @@ function App() {
       let bbox = bboxes[i];
       cv.rectangle(imgAbnormalRGBOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [255, 0, 0, 255], 2, cv.LINE_AA, 0);
     }
-
+    // draw bounding boxes for negative
+    for (let i = 0; i < bboxesNegative.length; i++) {
+      let bbox = bboxesNegative[i];
+      cv.rectangle(imgAbnormalRGBOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [0, 0, 255, 255], 2, cv.LINE_AA, 0);
+    }
     cv.imshow(imageAbnormalOverlayRef.current, imgAbnormalRGBOverlay);
-    // imgAbnormalRGBOverlay.delete();
+    imgAbnormalRGBOverlay.delete();
 
-    // clone imgAbnormalBinary
     let imgAbnormalBinaryAdjustment = imgAbnormalBinary.clone();
-
     // keep only the pixels in imgAbnormalBinaryAdjustment that are within the bounding boxes
     let bboxMask = cv.Mat.zeros(imgAbnormalBinaryAdjustment.rows, imgAbnormalBinaryAdjustment.cols, cv.CV_8U);
     for (let i = 0; i < bboxes.length; i++) {
@@ -592,20 +611,30 @@ function App() {
     }
     // apply the mask to imgAbnormalBinaryAdjustment
     cv.bitwise_and(imgAbnormalBinaryAdjustment, bboxMask, imgAbnormalBinaryAdjustment);
-    // imgAbnormalBinaryAdjustment.delete();
-
     // count number of pixels in image_abnormal_binary
     let num_pixels = cv.countNonZero(imgAbnormalBinaryAdjustment);
     setNumPixels(num_pixels);
-    console.log("num_pixels", num_pixels);
-
     setNumBoxes(bboxes.length);
-    console.log("num_boxes", bboxes.length);
-
-    // clean up
-    imgAbnormalRGBOverlay.delete();
-    bboxMask.delete();
     imgAbnormalBinaryAdjustment.delete();
+    bboxMask.delete();
+
+    // for negatives
+    let imgAbnormalBinaryAdjustmentNegative = imgAbnormalBinaryNegative.clone();
+    // keep only the pixels in imgAbnormalBinaryAdjustment that are within the bounding boxes
+    let bboxMaskNegative = cv.Mat.zeros(imgAbnormalBinaryAdjustmentNegative.rows, imgAbnormalBinaryAdjustmentNegative.cols, cv.CV_8U);
+    for (let i = 0; i < bboxesNegative.length; i++) {
+      let bbox = bboxesNegative[i];
+      // create a mask of the bbox
+      cv.rectangle(bboxMaskNegative, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [255, 255, 255, 255], -1, cv.LINE_AA, 0);
+    }
+    // apply the mask to imgAbnormalBinaryAdjustment
+    cv.bitwise_and(imgAbnormalBinaryAdjustmentNegative, bboxMaskNegative, imgAbnormalBinaryAdjustmentNegative);
+    // count number of pixels in image_abnormal_binary
+    let num_pixels_negative = cv.countNonZero(imgAbnormalBinaryAdjustmentNegative);
+    setNumPixelsNegative(num_pixels_negative);
+    setNumBoxesNegative(bboxesNegative.length);
+    imgAbnormalBinaryAdjustmentNegative.delete();
+    bboxMaskNegative.delete();
   }
 
   useEffect(() => {
@@ -645,7 +674,37 @@ function App() {
         break;
       }
     }
+    // remove bboxes if clicked on (negative)
+    for (let i = 0; i < bboxesNegative.length; i++) {
+      let bbox = bboxesNegative[i];
+      if (x_norm > bbox[0] / imgAbnormalBinary.cols && x_norm < bbox[2] / imgAbnormalBinary.cols && y_norm > bbox[1] / imgAbnormalBinary.rows && y_norm < bbox[3] / imgAbnormalBinary.rows) {
+        console.log("remove bbox", bbox)
+        bboxesNegative.splice(i, 1);
+        setBboxesNegative([...bboxesNegative]);
+        break;
+      }
+    }
 
+  }
+
+  function postProcessImageAbnormal(image_abnormal: cv.Mat, white_image_warped_gray: cv.Mat) {
+    // blur
+    cv.GaussianBlur(image_abnormal, image_abnormal, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+    
+    // let kernel = cv.Mat.ones(7, 7, cv.CV_8U);
+    // dilation
+    // cv.dilate(image_abnormal, image_abnormal, kernel, { x: -1, y: -1 }, 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+    // erosion
+    // for (let i = 0; i < 2; i++)
+    //   cv.erode(image_abnormal, image_abnormal, kernel, { x: -1, y: -1 }, 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+    // cv.dilate(image_abnormal, image_abnormal, kernel, { x: -1, y: -1 }, 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+    // kernel.delete();
+
+    // remove edges from image_abnormal
+    let white_image_warped_gray_not = new cv.Mat();
+    cv.bitwise_not(white_image_warped_gray, white_image_warped_gray_not);
+    cv.bitwise_and(image_abnormal, white_image_warped_gray_not, image_abnormal);
+    white_image_warped_gray_not.delete();
   }
 
   function downloadImage(imageAbnormalOverlayRef: MutableRefObject<HTMLCanvasElement>) {
@@ -662,7 +721,7 @@ function App() {
   return (
     <>
       {/* sticky footer at the bottom */}
-      <div className="flex flex-row fixed bottom-0 bg-gray-100 w-full px-4 justify-between z-10 space-x-2 items-center">
+      <div className="shadow-inner flex flex-row fixed bottom-0 bg-gray-100 w-full px-4 justify-between z-10 space-x-2 items-center">
         {/* buttons to swap between the 3 canvases */}
         <div className="flex space-x-2 my-4 items-center">
           <button type="button"
@@ -692,47 +751,95 @@ function App() {
               // swap clean and defective image
               setImg1(img2);
               setImg2(img1);
+              // reset bboxes
+              setBboxes([]);
+              setBboxesNegative([]);
 
               // recompute
-              computeDefects(0, method, resolution);
+
+              computeDefects(img2, img1, method, resolution);
             }}>
             <ArrowsRightLeftIcon className="w-5 text-gray-500"
               aria-hidden="true"></ArrowsRightLeftIcon>
           </button>
         </div>
+
         {/* slider for threshold */}
         <div className="flex my-4">
-          <div className="flex flex-col text-center">
+          <div className="flex flex-col text-center space-y-2">
             {/* button to minus threshold */}
             <div className="flex flex-row space-x-2 items-center">
               <button type="button"
-                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold - 1);
                   thresholdDefects(imgAbnormal, threshold - 1);
                 }}>-</button>
               {/* display threshold value */}
-              <label htmlFor="threshold" className="text-gray-900 font-semibold">{threshold}</label>
-
+              <label htmlFor="threshold" className="text-gray-900 font-semibold flex-grow">{threshold}</label>
               {/* button to plus threshold */}
               <button type="button"
-                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold + 1);
                   thresholdDefects(imgAbnormal, threshold + 1);
                 }}>+</button>
               {/* auto detect threshold button */}
-              <button type="button"
-                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-                  setAutoRatio(0.6);
-                  const t = autoThreshold(imgAbnormal, 0.6);
-                  thresholdDefects(imgAbnormal, t);
-                }}>0.6</button>
-              <button type="button"
-                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-                  setAutoRatio(0.8);
-                  const t = autoThreshold(imgAbnormal, 0.8);
-                  thresholdDefects(imgAbnormal, t);
-                }}>0.8</button>
+              <span className="isolate inline-flex rounded-md shadow-sm">
+                {options.map((value, i) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={classNames(i == 0 && "relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10",
+                      i > 0 && i < options.length - 1 && "relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10",
+                      i == options.length - 1 && "relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10"
+                    )}
+                    onClick={() => {
+                      setAutoRatio(value);
+                      const t = autoThreshold(imgAbnormal, value);
+                      setThreshold(t);
+                      thresholdDefects(imgAbnormal, t);
+                    }}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </span>
 
+            </div>
+            <div className="flex flex-row space-x-2 items-center">
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  setThresholdNegative(thresholdNegative - 1);
+                  thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative - 1);
+                }}>-</button>
+              {/* display threshold value */}
+              <label htmlFor="thresholdNegative" className="text-gray-900 font-semibold flex-grow">{thresholdNegative}</label>
+              {/* button to plus threshold */}
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  setThresholdNegative(thresholdNegative + 1);
+                  thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative + 1);
+                }}>+</button>
+              {/* auto detect threshold button */}
+              <span className="isolate inline-flex rounded-md shadow-sm">
+                {options.map((value, i) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={classNames(i == 0 && "relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10",
+                      i > 0 && i < options.length - 1 && "relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10",
+                      i == options.length - 1 && "relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10"
+                    )}
+                    onClick={() => {
+                      setAutoRatioNegative(value);
+                      const tN = autoThreshold(imgAbnormalNegative, value);
+                      setThresholdNegative(tN);
+                      thresholdDefectsNegative(imgAbnormalNegative, tN);
+                    }}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </span>
             </div>
             <label htmlFor="threshold" className="text-gray-900 font-semibold">Threshold</label>
           </div>
@@ -740,7 +847,7 @@ function App() {
         {/* button to run the algorithm */}
         <div className="flex justify-center space-x-2 my-4">
           {/* select sizes: 256, 512, 1024, 2048, original */}
-          <div className="flex flex-col items-center space-x-2">
+          {/* <div className="flex flex-col items-center space-x-2">
             <select className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
               setResolution(e.target.value);
             }}
@@ -752,9 +859,19 @@ function App() {
               <option value="original">Original</option>
             </select>
             <label htmlFor="method" className="text-gray-900 font-semibold">Size</label>
-          </div>
-          <div className="flex flex-col items-center space-x-2">
-            <select className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
+          </div> */}
+          <div className="flex flex-col items-center space-y-2">
+            <select className="w-full rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
+              setResolution(e.target.value);
+            }}
+              value={resolution}>
+              <option value="256">256</option>
+              <option value="512">512</option>
+              <option value="1024">1024</option>
+              <option value="2048">2048</option>
+              <option value="original">Original</option>
+            </select>
+            <select className="w-full rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
               setMethod(e.target.value);
             }}
               value={method}>
@@ -765,7 +882,7 @@ function App() {
           </div>
           <button type="button"
             className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-              computeDefects(0, method, resolution);
+              computeDefects(img1, img2, method, resolution);
             }}>Compute Defects</button>
         </div>
       </div>
@@ -800,7 +917,7 @@ function App() {
           </nav>
         </header>
 
-        <main className="mx-auto pb-24 pt-4 px-8">
+        <main className="mx-auto pb-48 pt-4 px-8">
 
           {/* Products */}
 
@@ -815,7 +932,7 @@ function App() {
                 <button type="button"
                   className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                     input1Ref.current?.click();
-                  }}>Upload</button>
+                  }}>Select</button>
                 {/* input file */}
                 <input ref={input1Ref} type="file" className="hidden w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-500 file:py-2.5 file:px-4 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-700 focus:outline-none disabled:pointer-events-none disabled:opacity-60" accept="image/*" onChange={(e: any) => {
                   // load img to objectURL
@@ -847,7 +964,7 @@ function App() {
                 <button type="button"
                   className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                     input2Ref.current?.click();
-                  }}>Upload</button>
+                  }}>Select</button>
                 {/* input file */}
                 <input ref={input2Ref} type="file" className="hidden w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-500 file:py-2.5 file:px-4 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-700 focus:outline-none disabled:pointer-events-none disabled:opacity-60" accept="image/*" onChange={(e: any) => {
                   // load img to objectURL
@@ -874,21 +991,34 @@ function App() {
             </div>
           </div>
 
-          <div className="flex flex-col space-y-1 mt-4 mb-2">
-            {/* display numPixels */}
-            <div className="text-sm font-semibold text-gray-900">Number of defect pixels: {numPixels}</div>
-            {/* display numBoxes */}
-            <div className="text-sm font-semibold text-gray-900">Number of defect bounding boxes: {numBoxes} <span className="font-normal">(click on the box to remove it)</span></div>
+          <div className="flex flex-row my-1">
+            <div className="flex flex-1 flex-col">
+              {/* display numPixelsNegative */}
+              <div className="text-sm font-semibold text-gray-900"># defective pixels: {numPixelsNegative}</div>
+              {/* display numBoxesNegative */}
+              <div className="text-sm font-semibold text-gray-900"># defective boxes: {numBoxesNegative}
+                <br></br><span className="font-normal">(click on the box to remove it)</span></div>
+
+            </div>
+            <div className="flex flex-1 flex-col">
+              {/* display numPixels */}
+              <div className="text-sm font-semibold text-gray-900"># defective pixels: {numPixels}</div>
+              {/* display numBoxes */}
+              <div className="text-sm font-semibold text-gray-900"># defective boxes: {numBoxes} <br></br><span className="font-normal">(click on the box to remove it)</span></div>
+            </div>
           </div>
 
           {/* canvas for display, the canvas should be on top of one another */}
           <div className="relative">
             {/* download image from canvas button */}
-            <button type="button"
-              className="absolute top-0 right-0 rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+            <button
+              type="button"
+              className="absolute top-0 right-0 bg-white rounded-bl px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
                 downloadImage(imageAbnormalOverlayRef);
               }
-              }>Download</button>
+              }>
+              <ArrowDownOnSquareIcon className="w-5 text-gray-500" aria-hidden="true"></ArrowDownOnSquareIcon>
+            </button>
             {/* canvas for displaying the image */}
             <canvas className="w-full max-h-screen-1/3"
               ref={imageAbnormalOverlayRef} onClick={canvasClickHandler}></canvas>
@@ -902,8 +1032,10 @@ function App() {
             <canvas className="w-full" ref={imageAlignedRef} id="imageAligned" width="300" height="300"></canvas>
             <label className="hidden">Aligned Mask</label>
             <canvas className="hidden w-full" ref={imageMaskRef} id="imageMaskRef" width="300" height="300"></canvas>
-            <label>Absolute Difference</label>
+            <label>Difference (defective)</label>
             <canvas className="w-full" ref={imageAbnormalRef} id="imageAbnormal" width="300" height="300"></canvas>
+            <label>Difference (clean)</label>
+            <canvas className="w-full" ref={imageAbnormalNegRef} id="imageAbnormalNeg" width="300" height="300"></canvas>
             <label>Binary Threshold</label>
             <canvas className="w-full" ref={imageDiffRef} id="imageDiff" width="300" height="300"></canvas>
             <label>Binary Threshold Negative</label>
