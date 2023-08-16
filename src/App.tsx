@@ -6,19 +6,22 @@ import { BugAntIcon, ArrowsRightLeftIcon, ArrowDownOnSquareIcon } from '@heroico
 import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 import { classNames } from './utils/react';
 import { autoThreshold, downloadImage, histogramMatching, mergeBboxes, postProcessImageAbnormal } from './utils/vision';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { images, pairs } from './db/db';
 import { loadImage, loadImageElementFromURL } from './utils/file';
+import { jsonToMat, matToJson } from './utils/cvmat';
 
 const autoOptions = [0, .25, .5, .8, .9, 1.0];
 
 function App() {
   const { pairId } = useParams();
+  const navigate = useNavigate();
+  
   useEffect(() => {
     setTimeout(async () => {
       if (pairId) {
         const pair = await pairs.get(+pairId);
-        console.log(pair);
+        
         if (pair) {
           const imageData = await images.get(pair.cleanImageId);
           if (!imageData) {
@@ -61,14 +64,103 @@ function App() {
           setAutoRatioNegative(0.8);
           setIsDebugging(false);
 
+          // load state
+          await loadState();
+
           // clear canvas
           if (imageAbnormalOverlayRef.current) {
             imageAbnormalOverlayRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalOverlayRef.current.width, imageAbnormalOverlayRef.current.height);
           }
+        } else{
+          console.log('pair not found', pairId);
+          navigate('/')
         }
       }
     })
   }, [pairId]);
+
+  const saveState = async (cleanImg, defectImg, imgAbnormalRGB, imgAbnormalBinary, imgAbnormalBinaryNegative, bboxes, bboxesNegative, imgAbnormal, imgAbnormalNegative, threshold, thresholdNegative) => {
+    const state = {
+      numPixels,
+      numBoxes,
+      numPixelsNegative,
+      numBoxesNegative,
+      bboxes: bboxes,
+      bboxesNegative: bboxesNegative,
+      cleanImg: matToJson(cleanImg),
+      defectImg: matToJson(defectImg),
+      imgAbnormalRGB: matToJson(imgAbnormalRGB),
+      imgAbnormalBinary: matToJson(imgAbnormalBinary),
+      imgAbnormalBinaryNegative: matToJson(imgAbnormalBinaryNegative),
+      imgAbnormal: matToJson(imgAbnormal),
+      imgAbnormalNegative: matToJson(imgAbnormalNegative),
+      threshold,
+      thresholdNegative,
+      mode,
+      method,
+      resolution,
+      autoRatio,
+      autoRatioNegative
+    };
+    // save to pairs db
+    // await pairs.update(+pairId, { ...state });
+    // update only state that is not null
+    await pairs.update(+pairId, Object.fromEntries(Object.entries(state).filter(([_, v]) => v != null)));
+  }
+
+  const loadState = async () => {
+    const pair = await pairs.get(+pairId);
+    console.log('loadState', 'pair', pairId, pair)
+    if (pair) {
+      setNumPixels(pair.numPixels);
+      setNumBoxes(pair.numBoxes);
+      setNumPixelsNegative(pair.numPixelsNegative);
+      setNumBoxesNegative(pair.numBoxesNegative);
+      setBboxes(pair.bboxes);
+      setBboxesNegative(pair.bboxesNegative);
+      if (cleanImg && !cleanImg.isDeleted()) {
+        cleanImg.delete();
+      }
+      setCleanImg(jsonToMat(pair.cleanImg));
+      if (defectImg && !defectImg.isDeleted()) {
+        defectImg.delete();
+      }
+      setDefectImg(jsonToMat(pair.defectImg));
+      if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
+        imgAbnormalRGB.delete();
+      }
+      setImgAbnormalRGB(jsonToMat(pair.imgAbnormalRGB));
+      if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
+        imgAbnormalBinary.delete();
+      }
+      setImgAbnormalBinary(jsonToMat(pair.imgAbnormalBinary));
+      if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+        imgAbnormalBinaryNegative.delete();
+      }
+      setImgAbnormalBinaryNegative(jsonToMat(pair.imgAbnormalBinaryNegative));
+      if (imgAbnormal && !imgAbnormal.isDeleted()) {
+        imgAbnormal.delete();
+      }
+      const img_abnormal = jsonToMat(pair.imgAbnormal)
+      setImgAbnormal(img_abnormal);
+      if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
+        imgAbnormalNegative.delete();
+      }
+      const img_abnormal_neg = jsonToMat(pair.imgAbnormalNegative)
+      setImgAbnormalNegative(img_abnormal_neg);
+
+      setThreshold(pair.threshold);
+      setThresholdNegative(pair.thresholdNegative);
+      setMode(pair.mode);
+      setMethod(pair.method);
+      setResolution(pair.resolution);
+      setAutoRatio(pair.autoRatio);
+      setAutoRatioNegative(pair.autoRatioNegative);
+
+      thresholdDefects(img_abnormal, pair.threshold);
+      thresholdDefectsNegative(img_abnormal_neg, pair.thresholdNegative);
+    }
+  }
 
   const imageCompareMatchesRef = useRef<HTMLCanvasElement>(null);
   const imageAlignedRef = useRef<HTMLCanvasElement>(null);
@@ -110,6 +202,20 @@ function App() {
 
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
 
+  // useEffect(() => {
+  //   (async () => {
+  //     if (pairId) {
+  //       await pairs.update(+pairId, {
+  //         numPixels,
+  //         numBoxes,
+  //         numPixelsNegative,
+  //         numBoxesNegative,
+  //         threshold,
+  //         thresholdNegative,
+  //       });
+  //     }
+  //   })();
+  // }, [numPixels, numBoxes, numPixelsNegative, numBoxesNegative, threshold, thresholdNegative]);
   // const input1Ref = useRef<HTMLInputElement>(null);
   // const input2Ref = useRef<HTMLInputElement>(null);
 
@@ -148,6 +254,7 @@ function App() {
     // cleanup
     contours.delete();
     hierarchy.delete();
+    return [image_abnormal_binary, bboxes];
   }
 
   function thresholdDefects(image_abnormal, threshold = 0) {
@@ -185,6 +292,7 @@ function App() {
     // cleanup
     contours.delete();
     hierarchy.delete();
+    return [image_abnormal_binary, bboxes];
   }
 
   async function computeDefects(img1URL, img2URL, method = "ORB", resolution = "512", knnDistance_option = 0.7) {
@@ -490,7 +598,7 @@ function App() {
 
     let threshold = autoThreshold(image_abnormal, autoRatio);
     setThreshold(threshold);
-    thresholdDefects(image_abnormal, threshold);
+    const [image_abnormal_binary, bboxes] = thresholdDefects(image_abnormal, threshold);
     if (imgAbnormal && !imgAbnormal.isDeleted()) {
       imgAbnormal.delete();
     }
@@ -498,7 +606,7 @@ function App() {
 
     let thresholdNegative = autoThreshold(image_abnormal_neg, autoRatioNegative);
     setThresholdNegative(thresholdNegative);
-    thresholdDefectsNegative(image_abnormal_neg, thresholdNegative);
+    const [image_abnormal_binary_neg, bboxes_neg] = thresholdDefectsNegative(image_abnormal_neg, thresholdNegative);
     if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
       imgAbnormalNegative.delete();
     }
@@ -542,7 +650,7 @@ function App() {
     im2_normalized.delete();
 
     // image_abnormal.delete();
-
+    saveState(image_B_final_result, im2, image_abnormal_binary_rgb, image_abnormal_binary, image_abnormal_binary_neg, bboxes, bboxes_neg, image_abnormal, image_abnormal_neg, threshold, thresholdNegative);
   }
 
   const renderBboxesOverlayClean = () => {
@@ -680,6 +788,10 @@ function App() {
                 className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold - 1);
                   thresholdDefects(imgAbnormal, threshold - 1);
+                  // update pairs threshold
+                  pairs.update(+pairId, {
+                    threshold: threshold - 1
+                  });
                 }}>-</button>
               {/* display threshold value */}
               <label htmlFor="threshold" className="text-gray-900 font-semibold flex-grow">{threshold}</label>
@@ -688,6 +800,9 @@ function App() {
                 className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold + 1);
                   thresholdDefects(imgAbnormal, threshold + 1);
+                  pairs.update(+pairId, {
+                    threshold: threshold + 1
+                  });
                 }}>+</button>
               {/* auto detect threshold button */}
               <span className="isolate inline-flex rounded-md shadow-sm">
@@ -704,6 +819,9 @@ function App() {
                       const t = autoThreshold(imgAbnormal, value);
                       setThreshold(t);
                       thresholdDefects(imgAbnormal, t);
+                      pairs.update(+pairId, {
+                        threshold: t
+                      });
                     }}
                   >
                     {value}
@@ -724,6 +842,9 @@ function App() {
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThresholdNegative(thresholdNegative - 1);
                   thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative - 1);
+                  pairs.update(+pairId, {
+                    thresholdNegative: thresholdNegative - 1
+                  });
                 }}>-</button>
               {/* display threshold value */}
               <label htmlFor="thresholdNegative" className="text-gray-900 font-semibold flex-grow">{thresholdNegative}</label>
@@ -732,6 +853,9 @@ function App() {
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThresholdNegative(thresholdNegative + 1);
                   thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative + 1);
+                  pairs.update(+pairId, {
+                    thresholdNegative: thresholdNegative + 1
+                  });
                 }}>+</button>
               {/* auto detect threshold button */}
               <span className="isolate inline-flex rounded-md shadow-sm">
@@ -748,6 +872,9 @@ function App() {
                       const tN = autoThreshold(imgAbnormalNegative, value);
                       setThresholdNegative(tN);
                       thresholdDefectsNegative(imgAbnormalNegative, tN);
+                      pairs.update(+pairId, {
+                        thresholdNegative: tN
+                      });
                     }}
                   >
                     {value}

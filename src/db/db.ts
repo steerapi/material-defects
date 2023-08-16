@@ -27,6 +27,46 @@ export interface DFPair {
   defectiveImageId?: number;
   cleanImageFileId?: number;
   defectiveImageFileId?: number;
+  // numPixels,
+  // numBoxes,
+  // numPixelsNegative,
+  // numBoxesNegative,
+  // bboxes,
+  // bboxesNegative,
+  // cleanImg,
+  // defectImg,
+  // imgAbnormalBinary,
+  // imgAbnormalRGB,
+  // imgAbnormal,
+  // imgAbnormalBinaryNegative,
+  // imgAbnormalNegative,
+  // threshold,
+  // thresholdNegative,
+  // mode,
+  // method,
+  // resolution,
+  // autoRatio,
+  // autoRatioNegative,
+  numPixels?: number;
+  numBoxes?: number;
+  numPixelsNegative?: number;
+  numBoxesNegative?: number;
+  bboxes?: string;
+  bboxesNegative?: string;
+  cleanImg?: any;
+  defectImg?: any;
+  imgAbnormalRGB?: string;
+  imgAbnormalBinary?: string;
+  imgAbnormalBinaryNegative?: string;
+  imgAbnormal?: string;
+  imgAbnormalNegative?: string;
+  threshold?: number;
+  thresholdNegative?: number;
+  mode?: string;
+  method?: string;
+  resolution?: string;
+  autoRatio?: number;
+  autoRatioNegative?: number;
 }
 
 export class DefectDexie extends Dexie {
