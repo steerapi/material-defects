@@ -74,14 +74,14 @@ export function FileManager() {
             return <div
               key={imageFile.id}
               className="w-24 h-20 flex-grow-0 flex-shrink-0">
-              <ImageItem
+              <ImageItemDragDrop
                 index={index}
                 moveImage={moveImage}
                 imageFile={imageFile}
                 onDelete={async () => {
                   await files.delete(imageFile.id);
                   updateImageFiles();
-                }}></ImageItem>
+                }}></ImageItemDragDrop>
             </div>
           })}
         </div>
@@ -90,7 +90,7 @@ export function FileManager() {
   )
 }
 
-const ImageItem = ({ imageFile, onDelete, index, moveImage }) => {
+export const ImageItemDragDrop = ({ imageFile, onDelete, index, moveImage }) => {
   const [imageUrl, setImageUrl] = useState("");
 
   useEffect(() => {

@@ -31,9 +31,10 @@ export function PairList(props) {
             const data = await pairs.toArray();
             setPairsData(data)
           }}>New Pair</button>
-          <button className={"rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-orange-500 text-white w-24 flex-grow-0 flex-shrink-0"} onClick={async () => {
-            
-          }}>Report</button>
+          {/* <button className={"rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-orange-500 text-white w-24 flex-grow-0 flex-shrink-0"} onClick={async () => {
+            // navigate to new page in a new window
+            window.open('/report', '_blank');
+          }}>Report</button> */}
           <button className={"rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-red-500 text-white w-24 flex-grow-0 flex-shrink-0"} onClick={async () => {
             await pairs.clear();
             const data = await pairs.toArray();
@@ -72,6 +73,7 @@ export function PairList(props) {
 export function PairListItem({ pair: _pair, onDelete }) {
   const [pair, setPair] = useState(_pair)
   const { pairId } = useParams();
+  const navigate = useNavigate()
   const [{ canDrop: canDrop1, isOver: isOver1 }, drop1] = useDrop(() => ({
     // The type (or types) to accept - strings or symbols
     accept: TYPE,
@@ -92,6 +94,16 @@ export function PairListItem({ pair: _pair, onDelete }) {
       setPair({
         ...pair,
       })
+
+      // if this is the first pair, auto navigate to this pair
+      if (pair.cleanImageId && pair.defectiveImageId) {
+        setTimeout(async () => {
+          const count = await pairs.count();
+          if (count == 1) {
+            navigate('/' + pair.id);
+          }
+        })
+      }
     },
   }))
   const [{ canDrop: canDrop2, isOver: isOver2 }, drop2] = useDrop(() => ({
@@ -114,6 +126,16 @@ export function PairListItem({ pair: _pair, onDelete }) {
       setPair({
         ...pair,
       })
+
+      // if this is the first pair, auto navigate to this pair
+      if (pair.cleanImageId && pair.defectiveImageId) {
+        setTimeout(async () => {
+          const count = await pairs.count();
+          if (count == 1) {
+            navigate('/' + pair.id);
+          }
+        })
+      }
     },
   }))
 
@@ -158,11 +180,14 @@ export function PairListItem({ pair: _pair, onDelete }) {
 }
 
 
-const ImageItem = ({ imageId }) => {
+export const ImageItem = ({ imageId }) => {
   const [imageUrl, setImageUrl] = useState("");
 
   useEffect(() => {
     setTimeout(async () => {
+      if (!imageId) {
+        return;
+      }
       const imageData = await images.get(imageId);
       if (!imageData) {
         return;
