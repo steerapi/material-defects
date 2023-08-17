@@ -6,6 +6,7 @@ import { TYPE } from "./FileManager"
 import { useNavigate, useParams } from "react-router-dom"
 import { classNames } from "../utils/react"
 import { XCircleIcon } from "@heroicons/react/24/outline"
+import { placeholder } from "../utils/image"
 
 export function PairList(props) {
   const [pairsData, setPairsData] = useState<DFPair[]>([])
@@ -166,7 +167,7 @@ const ImageItem = ({ imageId }) => {
   return (
     <>
       <div className="self-center">
-        <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={imageUrl} alt={imageId} />
+        <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={placeholder(imageUrl)} alt={imageId} />
       </div>
     </>
   )

@@ -4,6 +4,7 @@ import { importFile } from "../utils/file";
 import { DFImageFile, files, images } from "../db/db";
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { placeholder } from "../utils/image";
 
 export const TYPE = 'IMAGE_ITEM';
 
@@ -127,7 +128,7 @@ const ImageItem = ({ imageFile, onDelete, index, moveImage }) => {
     <>
       <div ref={(node) => ref(drop(node))}>
         <div className="flex flex-row w-24 m-0 self-center relative">
-          <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={imageUrl} alt={imageFile.name} />
+          <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={placeholder(imageUrl)} alt={imageFile.name} />
           {/* delete imageFile button */}
           <button className="self-start rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-red-600 text-white absolute right-0 top-0" onClick={onDelete}>
             {/* close icon */}

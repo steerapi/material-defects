@@ -10,6 +10,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { images, pairs } from './db/db';
 import { loadImage, loadImageElementFromURL } from './utils/file';
 import { jsonToMat, matToJson } from './utils/cvmat';
+import { placeholder } from './utils/image';
 
 const autoOptions = [0, .25, .5, .8, .9, 1.0];
 
@@ -965,7 +966,7 @@ function App() {
                 </div>
               </div>
               <div className="aspect-w-1 aspect-h-1 ml-4">
-                <img className="aspect-content w-24" src={img1URL} alt="Clean Image"></img>
+                <img className="aspect-content w-24" src={placeholder(img1URL)} alt="Clean Image"></img>
               </div>
             </div>
             <div className="flex flex-1 bg-white shadow p-4 rounded">
@@ -978,7 +979,7 @@ function App() {
                 </div>
               </div>
               <div className="aspect-w-1 aspect-h-1 ml-4">
-                <img className="aspect-content w-24" src={img2URL} alt="Defective Image"></img>
+                <img className="aspect-content w-24" src={placeholder(img2URL)} alt="Defective Image"></img>
               </div>
             </div>
           </div>
