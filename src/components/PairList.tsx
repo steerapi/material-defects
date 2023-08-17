@@ -10,6 +10,7 @@ import { placeholder } from "../utils/image"
 
 export function PairList(props) {
   const [pairsData, setPairsData] = useState<DFPair[]>([])
+  const { pairId } = useParams();
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -49,6 +50,15 @@ export function PairList(props) {
                 await pairs.delete(pair.id);
                 const data = await pairs.toArray();
                 setPairsData(data)
+
+                // if pairId == pair.id then navigate to first pair
+                if (+pairId == pair.id) {
+                  if (data.length > 0) {
+                    navigate('/' + data[0].id);
+                  } else {
+                    navigate('/');
+                  }
+                }
               }
               }></PairListItem>
             </div>
@@ -117,7 +127,7 @@ export function PairListItem({ pair: _pair, onDelete }) {
             {pair.cleanImageId ?
               <ImageItem imageId={pair.cleanImageId} /> :
               <div>
-                <div className="text-xs">{canDrop1 ? 'Release to place clean image' : 'Drag an image here'}</div>
+                <div className="text-xs h-20">{canDrop1 ? <ImageItem imageId={pair.cleanImageId} /> : 'Drag an image here'}</div>
               </div>
             }
           </div>
@@ -130,7 +140,7 @@ export function PairListItem({ pair: _pair, onDelete }) {
             {pair.defectiveImageId ?
               <ImageItem imageId={pair.defectiveImageId} /> :
               <div>
-                <div className="text-xs">{canDrop2 ? 'Release to place defective image' : 'Drag an image here'}</div>
+                <div className="text-xs">{canDrop2 ? <ImageItem imageId={pair.cleanImageId} /> : 'Drag an image here'}</div>
               </div>
             }
           </div>

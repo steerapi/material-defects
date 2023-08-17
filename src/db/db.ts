@@ -47,6 +47,10 @@ export interface DFPair {
   // resolution,
   // autoRatio,
   // autoRatioNegative,
+}
+
+export interface DFPairData {
+  id?: number;
   numPixels?: number;
   numBoxes?: number;
   numPixelsNegative?: number;
@@ -75,13 +79,15 @@ export class DefectDexie extends Dexie {
   files!: Table<DFImageFile>;
   images!: Table<DFImage>;
   pairs!: Table<DFPair>;
+  pairData!: Table<DFPairData>;
 
   constructor() {
     super("defects");
-    this.version(1).stores({
+    this.version(2).stores({
       files: "++id,&name",
       images: "++id",
       pairs: "++id",
+      pairData: "++id",
     });
   }
 }
@@ -90,3 +96,4 @@ export const db = new DefectDexie();
 export const files = db.files;
 export const images = db.images;
 export const pairs = db.pairs;
+export const pairData = db.pairData;

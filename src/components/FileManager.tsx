@@ -129,6 +129,8 @@ const ImageItem = ({ imageFile, onDelete, index, moveImage }) => {
       <div ref={(node) => ref(drop(node))}>
         <div className="flex flex-row w-24 m-0 self-center relative">
           <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={placeholder(imageUrl)} alt={imageFile.name} />
+          {/* name */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-50 text-white text-xs px-1 py-1 whitespace-nowrap">{imageFile.name}</div>
           {/* delete imageFile button */}
           <button className="self-start rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-red-600 text-white absolute right-0 top-0" onClick={onDelete}>
             {/* close icon */}

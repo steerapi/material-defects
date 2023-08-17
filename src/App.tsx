@@ -7,7 +7,7 @@ import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 import { classNames } from './utils/react';
 import { autoThreshold, downloadImage, histogramMatching, mergeBboxes, postProcessImageAbnormal } from './utils/vision';
 import { useNavigate, useParams } from 'react-router-dom';
-import { images, pairs } from './db/db';
+import { images, pairData, pairs } from './db/db';
 import { loadImage, loadImageElementFromURL } from './utils/file';
 import { jsonToMat, matToJson } from './utils/cvmat';
 import { placeholder } from './utils/image';
@@ -17,151 +17,6 @@ const autoOptions = [0, .25, .5, .8, .9, 1.0];
 function App() {
   const { pairId } = useParams();
   const navigate = useNavigate();
-  
-  useEffect(() => {
-    setTimeout(async () => {
-      if (pairId) {
-        const pair = await pairs.get(+pairId);
-        
-        if (pair) {
-          const imageData = await images.get(pair.cleanImageId);
-          if (!imageData) {
-            return;
-          }
-          const imageUrl = URL.createObjectURL(
-            new Blob([imageData.buffer], { type: imageData.type })
-          );
-          setImg1URL(imageUrl);
-          const imageData2 = await images.get(pair.defectiveImageId);
-          if (!imageData2) {
-            return;
-          }
-          const imageUrl2 = URL.createObjectURL(
-            new Blob([imageData2.buffer], { type: imageData2.type })
-          );
-          console.log(imageUrl2);
-          setImg2URL(imageUrl2);
-
-          // reset state
-          setNumPixels(0);
-          setNumBoxes(0);
-          setNumPixelsNegative(0);
-          setNumBoxesNegative(0);
-          setBboxes([]);
-          setBboxesNegative([]);
-          setCleanImg(null);
-          setDefectImg(null);
-          setImgAbnormalBinary(null);
-          setImgAbnormalRGB(null);
-          setImgAbnormal(null);
-          setImgAbnormalBinaryNegative(null);
-          setImgAbnormalNegative(null);
-          setThreshold(0);
-          setThresholdNegative(0);
-          setMode("defective");
-          setMethod("ORB");
-          setResolution("original");
-          setAutoRatio(0.8);
-          setAutoRatioNegative(0.8);
-          setIsDebugging(false);
-
-          // load state
-          await loadState();
-
-          // clear canvas
-          if (imageAbnormalOverlayRef.current) {
-            imageAbnormalOverlayRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalOverlayRef.current.width, imageAbnormalOverlayRef.current.height);
-          }
-        } else{
-          console.log('pair not found', pairId);
-          navigate('/')
-        }
-      }
-    })
-  }, [pairId]);
-
-  const saveState = async (cleanImg, defectImg, imgAbnormalRGB, imgAbnormalBinary, imgAbnormalBinaryNegative, bboxes, bboxesNegative, imgAbnormal, imgAbnormalNegative, threshold, thresholdNegative) => {
-    const state = {
-      numPixels,
-      numBoxes,
-      numPixelsNegative,
-      numBoxesNegative,
-      bboxes: bboxes,
-      bboxesNegative: bboxesNegative,
-      cleanImg: matToJson(cleanImg),
-      defectImg: matToJson(defectImg),
-      imgAbnormalRGB: matToJson(imgAbnormalRGB),
-      imgAbnormalBinary: matToJson(imgAbnormalBinary),
-      imgAbnormalBinaryNegative: matToJson(imgAbnormalBinaryNegative),
-      imgAbnormal: matToJson(imgAbnormal),
-      imgAbnormalNegative: matToJson(imgAbnormalNegative),
-      threshold,
-      thresholdNegative,
-      mode,
-      method,
-      resolution,
-      autoRatio,
-      autoRatioNegative
-    };
-    // save to pairs db
-    // await pairs.update(+pairId, { ...state });
-    // update only state that is not null
-    await pairs.update(+pairId, Object.fromEntries(Object.entries(state).filter(([_, v]) => v != null)));
-  }
-
-  const loadState = async () => {
-    const pair = await pairs.get(+pairId);
-    console.log('loadState', 'pair', pairId, pair)
-    if (pair) {
-      setNumPixels(pair.numPixels);
-      setNumBoxes(pair.numBoxes);
-      setNumPixelsNegative(pair.numPixelsNegative);
-      setNumBoxesNegative(pair.numBoxesNegative);
-      setBboxes(pair.bboxes);
-      setBboxesNegative(pair.bboxesNegative);
-      if (cleanImg && !cleanImg.isDeleted()) {
-        cleanImg.delete();
-      }
-      setCleanImg(jsonToMat(pair.cleanImg));
-      if (defectImg && !defectImg.isDeleted()) {
-        defectImg.delete();
-      }
-      setDefectImg(jsonToMat(pair.defectImg));
-      if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
-        imgAbnormalRGB.delete();
-      }
-      setImgAbnormalRGB(jsonToMat(pair.imgAbnormalRGB));
-      if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
-        imgAbnormalBinary.delete();
-      }
-      setImgAbnormalBinary(jsonToMat(pair.imgAbnormalBinary));
-      if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
-        imgAbnormalBinaryNegative.delete();
-      }
-      setImgAbnormalBinaryNegative(jsonToMat(pair.imgAbnormalBinaryNegative));
-      if (imgAbnormal && !imgAbnormal.isDeleted()) {
-        imgAbnormal.delete();
-      }
-      const img_abnormal = jsonToMat(pair.imgAbnormal)
-      setImgAbnormal(img_abnormal);
-      if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
-        imgAbnormalNegative.delete();
-      }
-      const img_abnormal_neg = jsonToMat(pair.imgAbnormalNegative)
-      setImgAbnormalNegative(img_abnormal_neg);
-
-      setThreshold(pair.threshold);
-      setThresholdNegative(pair.thresholdNegative);
-      setMode(pair.mode);
-      setMethod(pair.method);
-      setResolution(pair.resolution);
-      setAutoRatio(pair.autoRatio);
-      setAutoRatioNegative(pair.autoRatioNegative);
-
-      thresholdDefects(img_abnormal, pair.threshold);
-      thresholdDefectsNegative(img_abnormal_neg, pair.thresholdNegative);
-    }
-  }
 
   const imageCompareMatchesRef = useRef<HTMLCanvasElement>(null);
   const imageAlignedRef = useRef<HTMLCanvasElement>(null);
@@ -206,7 +61,7 @@ function App() {
   // useEffect(() => {
   //   (async () => {
   //     if (pairId) {
-  //       await pairs.update(+pairId, {
+  //       await pairData.update(+pairId, {
   //         numPixels,
   //         numBoxes,
   //         numPixelsNegative,
@@ -219,6 +74,168 @@ function App() {
   // }, [numPixels, numBoxes, numPixelsNegative, numBoxesNegative, threshold, thresholdNegative]);
   // const input1Ref = useRef<HTMLInputElement>(null);
   // const input2Ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(async () => {
+      if (pairId) {
+        const pair = await pairs.get(+pairId);
+        const data = await pairData.get(+pairId);
+        if (pair) {
+          const imageData = await images.get(pair.cleanImageId);
+          if (!imageData) {
+            return;
+          }
+          const imageUrl = URL.createObjectURL(
+            new Blob([imageData.buffer], { type: imageData.type })
+          );
+          setImg1URL(imageUrl);
+          const imageData2 = await images.get(pair.defectiveImageId);
+          if (!imageData2) {
+            return;
+          }
+          const imageUrl2 = URL.createObjectURL(
+            new Blob([imageData2.buffer], { type: imageData2.type })
+          );
+          console.log(imageUrl2);
+          setImg2URL(imageUrl2);
+
+          // clear canvas
+          if (imageAbnormalOverlayRef.current) {
+            imageAbnormalOverlayRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalOverlayRef.current.width, imageAbnormalOverlayRef.current.height);
+          }
+
+          // reset state
+          setNumPixels(0);
+          setNumBoxes(0);
+          setNumPixelsNegative(0);
+          setNumBoxesNegative(0);
+          setBboxes([]);
+          setBboxesNegative([]);
+          setCleanImg(null);
+          setDefectImg(null);
+          setImgAbnormalBinary(null);
+          setImgAbnormalRGB(null);
+          setImgAbnormal(null);
+          setImgAbnormalBinaryNegative(null);
+          setImgAbnormalNegative(null);
+          setThreshold(0);
+          setThresholdNegative(0);
+          setMode("defective");
+          setMethod("ORB");
+          setResolution("original");
+          setAutoRatio(0.8);
+          setAutoRatioNegative(0.8);
+          setIsDebugging(false);
+
+          if (data) {
+            // load state
+            try {
+              await loadState();
+            } catch (error) {
+              console.error(error)
+            }
+
+          }
+
+        } else {
+          console.log('pair not found', pairId);
+          navigate('/')
+        }
+      }
+    })
+  }, [pairId]);
+
+  const saveState = async (cleanImg, defectImg, imgAbnormalRGB, imgAbnormalBinary, imgAbnormalBinaryNegative, bboxes, bboxesNegative, imgAbnormal, imgAbnormalNegative, threshold, thresholdNegative) => {
+    console.log('saveState', 'mode', mode)
+    const state = {
+      numPixels,
+      numBoxes,
+      numPixelsNegative,
+      numBoxesNegative,
+      bboxes: bboxes,
+      bboxesNegative: bboxesNegative,
+      cleanImg: matToJson(cleanImg),
+      defectImg: matToJson(defectImg),
+      imgAbnormalRGB: matToJson(imgAbnormalRGB),
+      imgAbnormalBinary: matToJson(imgAbnormalBinary),
+      imgAbnormalBinaryNegative: matToJson(imgAbnormalBinaryNegative),
+      imgAbnormal: matToJson(imgAbnormal),
+      imgAbnormalNegative: matToJson(imgAbnormalNegative),
+      threshold,
+      thresholdNegative,
+      mode,
+      method,
+      resolution,
+      autoRatio,
+      autoRatioNegative
+    };
+    // save to pairs db
+    // await pairData.update(+pairId, { ...state });
+    // update only state that is not null
+    // await pairData.update(+pairId, Object.fromEntries(Object.entries(state).filter(([_, v]) => v != null)));
+    // save to pairData db
+    await pairData.put({ id: +pairId, ...Object.fromEntries(Object.entries(state).filter(([_, v]) => v != null)) });
+  }
+
+  const loadState = async () => {
+    let data = await pairData.get(+pairId);
+    if (data) {
+      setNumPixels(data.numPixels || 0);
+      setNumBoxes(data.numBoxes || 0);
+      setNumPixelsNegative(data.numPixelsNegative || 0);
+      setNumBoxesNegative(data.numBoxesNegative || 0);
+      if (cleanImg && !cleanImg.isDeleted()) {
+        cleanImg.delete();
+      }
+      setCleanImg(jsonToMat(data.cleanImg));
+      if (defectImg && !defectImg.isDeleted()) {
+        defectImg.delete();
+      }
+      setDefectImg(jsonToMat(data.defectImg));
+      if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
+        imgAbnormalRGB.delete();
+      }
+      setImgAbnormalRGB(jsonToMat(data.imgAbnormalRGB));
+      if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
+        imgAbnormalBinary.delete();
+      }
+      setImgAbnormalBinary(jsonToMat(data.imgAbnormalBinary));
+      if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+        imgAbnormalBinaryNegative.delete();
+      }
+      setImgAbnormalBinaryNegative(jsonToMat(data.imgAbnormalBinaryNegative));
+      if (imgAbnormal && !imgAbnormal.isDeleted()) {
+        imgAbnormal.delete();
+      }
+      const img_abnormal = jsonToMat(data.imgAbnormal)
+      setImgAbnormal(img_abnormal);
+      if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
+        imgAbnormalNegative.delete();
+      }
+      const img_abnormal_neg = jsonToMat(data.imgAbnormalNegative)
+      setImgAbnormalNegative(img_abnormal_neg);
+
+      setThreshold(data.threshold);
+      setThresholdNegative(data.thresholdNegative);
+
+      setMode(data.mode || 'defective');
+      setMethod(data.method || 'ORB');
+      setResolution(data.resolution || 'original');
+      setAutoRatio(data.autoRatio ?? 0.8);
+      setAutoRatioNegative(data.autoRatioNegative ?? 0.8);
+
+      if (img_abnormal) {
+        thresholdDefects(img_abnormal, data.threshold);
+      }
+      if (img_abnormal_neg) {
+        thresholdDefectsNegative(img_abnormal_neg, data.thresholdNegative);
+      }
+
+      setBboxes(data.bboxes || []);
+      setBboxesNegative(data.bboxesNegative || []);
+
+    }
+  }
 
   function thresholdDefectsNegative(image_abnormal, threshold = 0) {
     // binarize image_abnormal
@@ -759,6 +776,12 @@ function App() {
       }
     }
 
+    // save
+    pairData.update(+pairId, {
+      bboxes: bboxes,
+      bboxesNegative: bboxesNegative
+    })
+
   }
 
   useEffect(() => {
@@ -784,13 +807,16 @@ function App() {
                   // show imageAligned
                   setMode("defective");
                   renderBboxesOverlay();
+                  pairData.update(+pairId, {
+                    mode: "defective"
+                  });
                 }}>Defective</button>
               <button type="button"
                 className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold - 1);
                   thresholdDefects(imgAbnormal, threshold - 1);
                   // update pairs threshold
-                  pairs.update(+pairId, {
+                  pairData.update(+pairId, {
                     threshold: threshold - 1
                   });
                 }}>-</button>
@@ -801,7 +827,7 @@ function App() {
                 className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold + 1);
                   thresholdDefects(imgAbnormal, threshold + 1);
-                  pairs.update(+pairId, {
+                  pairData.update(+pairId, {
                     threshold: threshold + 1
                   });
                 }}>+</button>
@@ -820,7 +846,7 @@ function App() {
                       const t = autoThreshold(imgAbnormal, value);
                       setThreshold(t);
                       thresholdDefects(imgAbnormal, t);
-                      pairs.update(+pairId, {
+                      pairData.update(+pairId, {
                         threshold: t
                       });
                     }}
@@ -837,13 +863,16 @@ function App() {
                   // show imageAbnormal
                   setMode("clean");
                   renderBboxesOverlayClean();
+                  pairData.update(+pairId, {
+                    mode: "clean"
+                  });
                   // cv.imshow(imageAbnormalOverlayRef.current, cleanImg);
                 }}>Clean</button>
               <button type="button"
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThresholdNegative(thresholdNegative - 1);
                   thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative - 1);
-                  pairs.update(+pairId, {
+                  pairData.update(+pairId, {
                     thresholdNegative: thresholdNegative - 1
                   });
                 }}>-</button>
@@ -854,7 +883,7 @@ function App() {
                 className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThresholdNegative(thresholdNegative + 1);
                   thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative + 1);
-                  pairs.update(+pairId, {
+                  pairData.update(+pairId, {
                     thresholdNegative: thresholdNegative + 1
                   });
                 }}>+</button>
@@ -873,7 +902,7 @@ function App() {
                       const tN = autoThreshold(imgAbnormalNegative, value);
                       setThresholdNegative(tN);
                       thresholdDefectsNegative(imgAbnormalNegative, tN);
-                      pairs.update(+pairId, {
+                      pairData.update(+pairId, {
                         thresholdNegative: tN
                       });
                     }}
@@ -942,12 +971,29 @@ function App() {
               <option value="AKAZE">AKAZE (slow)</option>
               <option value="ORB">ORB (fast)</option>
             </select>
-            <label htmlFor="method" className="text-gray-900 font-semibold">Method</label>
+            <div className='flex flex-row items-center space-x-2'>
+              <label htmlFor="method" className="text-gray-900 font-semibold">Method</label>
+              <button
+                type="button"
+                className="bg-white rounded-br px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
+                  setIsDebugging(!isDebugging);
+                }
+                }>
+                {isDebugging ?
+                  <BugAntIcon
+                    className="w-3 text-gray-500"
+                    aria-hidden="true" />
+                  :
+                  <BugAntIconOutline
+                    className="w-3 text-gray-500"
+                    aria-hidden="true" />}
+              </button>
+            </div>
           </div>
           <button type="button"
             className="rounded-md border-0 text-white bg-green-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
               computeDefects(img1URL, img2URL, method, resolution);
-            }}>Compute Defects</button>
+            }}>Compare</button>
         </div>
       </div>
 
@@ -987,21 +1033,6 @@ function App() {
           {/* canvas for display, the canvas should be on top of one another */}
           <div className="relative flex flex-row mt-4">
             {/* download image from canvas button */}
-            <button
-              type="button"
-              className="absolute top-0 left-0 bg-white rounded-br px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
-                setIsDebugging(!isDebugging);
-              }
-              }>
-              {isDebugging ?
-                <BugAntIcon
-                  className="w-5 text-gray-500"
-                  aria-hidden="true" />
-                :
-                <BugAntIconOutline
-                  className="w-5 text-gray-500"
-                  aria-hidden="true" />}
-            </button>
             <button
               type="button"
               className="absolute top-0 right-0 bg-white rounded-bl px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" onClick={() => {
