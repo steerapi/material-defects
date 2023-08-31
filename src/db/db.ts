@@ -55,6 +55,7 @@ export interface DFPairData {
   numBoxes?: number;
   numPixelsNegative?: number;
   numBoxesNegative?: number;
+  isMergedBox?: boolean;
   bboxes?: string;
   bboxesNegative?: string;
   cleanImg?: any;

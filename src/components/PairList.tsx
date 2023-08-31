@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react"
 import { DndProvider, useDrop } from "react-dnd"
-import { DFPair, images, pairs } from "../db/db"
+import { DFPair, files, images, pairData, pairs } from "../db/db"
 import { HTML5Backend } from "react-dnd-html5-backend"
 import { TYPE } from "./FileManager"
 import { useNavigate, useParams } from "react-router-dom"
 import { classNames } from "../utils/react"
 import { XCircleIcon } from "@heroicons/react/24/outline"
 import { placeholder } from "../utils/image"
+import { forEach } from "modern-async"
 
 export function PairList(props) {
   const [pairsData, setPairsData] = useState<DFPair[]>([])
@@ -36,6 +37,21 @@ export function PairList(props) {
             window.open('/report', '_blank');
           }}>Report</button> */}
           <button className={"rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-red-500 text-white w-24 flex-grow-0 flex-shrink-0"} onClick={async () => {
+            // clear images
+            // get all images
+            const allImages = await images.toArray();
+            // get all files
+            const allFiles = await files.toArray();
+            // find images that are not in files imageId
+            const imageIds = allFiles.map(file => file.imageId);
+            const imagesToDelete = allImages.filter(image => {
+              return !imageIds.includes(image.id);
+            });
+            // delete images
+            await forEach(imagesToDelete, async (image) => {
+              await images.delete(image.id);
+            });
+
             await pairs.clear();
             const data = await pairs.toArray();
             setPairsData(data)
@@ -49,6 +65,7 @@ export function PairList(props) {
             }}>
               <PairListItem pair={pair} onDelete={async () => {
                 await pairs.delete(pair.id);
+                await pairData.delete(pair.id);
                 const data = await pairs.toArray();
                 setPairsData(data)
 

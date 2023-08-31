@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { forEach } from "modern-async";
 import { importFile } from "../utils/file";
-import { DFImageFile, files, images } from "../db/db";
+import { DFImageFile, files, images, pairs } from "../db/db";
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { placeholder } from "../utils/image";
@@ -64,6 +64,20 @@ export function FileManager() {
             Add Files
           </button>
           <button className={"rounded-md border-0 px-1 py-1 text-sm font-semibold shadow-md hover:bg-gray-400 bg-red-500 text-white w-24 flex-grow-0 flex-shrink-0"} onClick={async () => {
+            // get all images
+            const allImages = await images.toArray();
+            // get all pairs
+            const allPairs = await pairs.toArray();
+            // find images that are not in pairs cleanImageId or defectiveImageId
+            const imageIds = allPairs.map(pair => pair.cleanImageId).concat(allPairs.map(pair => pair.defectiveImageId));
+            const imagesToDelete = allImages.filter(image => {
+              return !imageIds.includes(image.id);
+            });
+            // delete images
+            await forEach(imagesToDelete, async (image) => {
+              await images.delete(image.id);
+            });
+            
             await files.clear();
             updateImageFiles();
           }}>Clear</button>

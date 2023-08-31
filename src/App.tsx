@@ -1,14 +1,14 @@
 /* eslint-disable prefer-const */
-import { MutableRefObject, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import cv, { } from "@techstark/opencv-js";
-import { BugAntIcon, ArrowsRightLeftIcon, ArrowDownOnSquareIcon } from '@heroicons/react/20/solid';
+import cv from "@techstark/opencv-js";
+import { BugAntIcon, ArrowsRightLeftIcon, ArrowDownOnSquareIcon, PlayIcon } from '@heroicons/react/20/solid';
 import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 import { classNames } from './utils/react';
 import { autoThreshold, downloadImage, histogramMatching, mergeBboxes, postProcessImageAbnormal } from './utils/vision';
 import { useNavigate, useParams } from 'react-router-dom';
 import { images, pairData, pairs } from './db/db';
-import { loadImage, loadImageElementFromURL } from './utils/file';
+import { loadImageElementFromURL } from './utils/file';
 import { jsonToMat, matToJson } from './utils/cvmat';
 import { placeholder } from './utils/image';
 
@@ -27,6 +27,7 @@ function App() {
   const imageAbnormalNegRef = useRef<HTMLCanvasElement>(null);
   const imageAbnormalOverlayRef = useRef<HTMLCanvasElement>(null);
 
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [numPixels, setNumPixels] = useState<number>(0);
   const [numBoxes, setNumBoxes] = useState<number>(0);
   const [numPixelsNegative, setNumPixelsNegative] = useState<number>(0);
@@ -52,11 +53,12 @@ function App() {
 
   const [mode, setMode] = useState<string>("defective");
   const [method, setMethod] = useState<string>("ORB");
-  const [resolution, setResolution] = useState<string>("original");
+  const [resolution, setResolution] = useState<string>("512");
   const [autoRatio, setAutoRatio] = useState<number>(0.8);
   const [autoRatioNegative, setAutoRatioNegative] = useState<number>(0.8);
 
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
+  const [isMergedBox, setIsMergedBox] = useState<boolean>(true);
 
   // useEffect(() => {
   //   (async () => {
@@ -96,7 +98,6 @@ function App() {
           const imageUrl2 = URL.createObjectURL(
             new Blob([imageData2.buffer], { type: imageData2.type })
           );
-          console.log(imageUrl2);
           setImg2URL(imageUrl2);
 
           // clear canvas
@@ -122,11 +123,13 @@ function App() {
           setThresholdNegative(0);
           setMode("defective");
           setMethod("ORB");
-          setResolution("original");
+          setResolution("512");
           setAutoRatio(0.8);
           setAutoRatioNegative(0.8);
           setIsDebugging(false);
+          setIsMergedBox(true);
 
+          console.log('pair found', pairId, data)
           if (data) {
             // load state
             try {
@@ -145,9 +148,12 @@ function App() {
     })
   }, [pairId]);
 
-  const saveState = async (cleanImg, defectImg, imgAbnormalRGB, imgAbnormalBinary, imgAbnormalBinaryNegative, bboxes, bboxesNegative, imgAbnormal, imgAbnormalNegative, threshold, thresholdNegative) => {
-    console.log('saveState', 'mode', mode)
+  const saveState = async (isMergedBox, numPixels,
+    numBoxes,
+    numPixelsNegative,
+    numBoxesNegative, cleanImg, defectImg, imgAbnormalRGB, imgAbnormalBinary, imgAbnormalBinaryNegative, bboxes, bboxesNegative, imgAbnormal, imgAbnormalNegative, threshold, thresholdNegative) => {
     const state = {
+      isMergedBox,
       numPixels,
       numBoxes,
       numPixelsNegative,
@@ -156,9 +162,9 @@ function App() {
       bboxesNegative: bboxesNegative,
       cleanImg: matToJson(cleanImg),
       defectImg: matToJson(defectImg),
-      imgAbnormalRGB: matToJson(imgAbnormalRGB),
-      imgAbnormalBinary: matToJson(imgAbnormalBinary),
-      imgAbnormalBinaryNegative: matToJson(imgAbnormalBinaryNegative),
+      // imgAbnormalRGB: matToJson(imgAbnormalRGB),
+      // imgAbnormalBinary: matToJson(imgAbnormalBinary),
+      // imgAbnormalBinaryNegative: matToJson(imgAbnormalBinaryNegative),
       imgAbnormal: matToJson(imgAbnormal),
       imgAbnormalNegative: matToJson(imgAbnormalNegative),
       threshold,
@@ -184,6 +190,7 @@ function App() {
       setNumBoxes(data.numBoxes || 0);
       setNumPixelsNegative(data.numPixelsNegative || 0);
       setNumBoxesNegative(data.numBoxesNegative || 0);
+      setIsMergedBox(data.isMergedBox ?? true);
       if (cleanImg && !cleanImg.isDeleted()) {
         cleanImg.delete();
       }
@@ -192,18 +199,20 @@ function App() {
         defectImg.delete();
       }
       setDefectImg(jsonToMat(data.defectImg));
-      if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
-        imgAbnormalRGB.delete();
-      }
-      setImgAbnormalRGB(jsonToMat(data.imgAbnormalRGB));
-      if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
-        imgAbnormalBinary.delete();
-      }
-      setImgAbnormalBinary(jsonToMat(data.imgAbnormalBinary));
-      if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
-        imgAbnormalBinaryNegative.delete();
-      }
-      setImgAbnormalBinaryNegative(jsonToMat(data.imgAbnormalBinaryNegative));
+
+      // if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
+      //   imgAbnormalRGB.delete();
+      // }
+      // setImgAbnormalRGB(jsonToMat(data.imgAbnormalRGB));
+      // if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
+      //   imgAbnormalBinary.delete();
+      // }
+      // setImgAbnormalBinary(jsonToMat(data.imgAbnormalBinary));
+      // if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+      //   imgAbnormalBinaryNegative.delete();
+      // }
+      // setImgAbnormalBinaryNegative(jsonToMat(data.imgAbnormalBinaryNegative));
+
       if (imgAbnormal && !imgAbnormal.isDeleted()) {
         imgAbnormal.delete();
       }
@@ -260,9 +269,15 @@ function App() {
       // save bounding box coordinates with padding of 10
       bboxes.push([x - 10, y - 10, x + w + 10, y + h + 10]);
     }
+
     // merge overlapping boxes in bboxes to one bigger box 
-    mergeBboxes(bboxes);
+    if (isMergedBox) {
+      mergeBboxes(bboxes);
+    }
     setBboxesNegative(bboxes);
+    pairData.update(+pairId, {
+      bboxesNegative: bboxes
+    });
 
     if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
       imgAbnormalBinaryNegative.delete();
@@ -299,8 +314,13 @@ function App() {
       bboxes.push([x - 10, y - 10, x + w + 10, y + h + 10]);
     }
     // merge overlapping boxes in bboxes to one bigger box 
-    mergeBboxes(bboxes);
+    if (isMergedBox) {
+      mergeBboxes(bboxes);
+    }
     setBboxes(bboxes);
+    pairData.update(+pairId, {
+      bboxes: bboxes
+    });
 
     if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
       imgAbnormalBinary.delete();
@@ -314,6 +334,8 @@ function App() {
   }
 
   async function computeDefects(img1URL, img2URL, method = "ORB", resolution = "512", knnDistance_option = 0.7) {
+    // check if already computed with the same parameters
+
     // set seed to keep result consistent
     cv.setRNGSeed(0);
 
@@ -411,13 +433,6 @@ function App() {
     orb.detectAndCompute(im1Gray, det1, keypoints1, descriptors1);
     orb.detectAndCompute(im2Gray, det2, keypoints2, descriptors2);
 
-    // console.log("Total of ", keypoints1.size(), " keypoints1 (img to align) and ", keypoints2.size(), " keypoints2 (reference)");
-    // console.log("here are the first 5 keypoints for keypoints1:");
-    // for (let i = 0; i < keypoints1.size(); i++) {
-    //   console.log("keypoints1: [", i, "]", keypoints1.get(i).pt.x, keypoints1.get(i).pt.y);
-    //   if (i === 5) { break; }
-    // }
-
     // Match features.
     let good_matches: any = new cv.DMatchVector();
     // let bf: any = new cv.BFMatcher(); 
@@ -460,10 +475,10 @@ function App() {
     let originalSize2 = new cv.Size(im2.cols, im2.rows);
 
     // reload images
-    im1.delete()
-    im1 = cv.imread(img1);
-    im2.delete()
-    im2 = cv.imread(img2);
+    // im1.delete()
+    // im1 = cv.imread(img1);
+    // im2.delete()
+    // im2 = cv.imread(img2);
 
     // new size
     let newSize1 = new cv.Size(im1.cols, im1.rows);
@@ -491,7 +506,7 @@ function App() {
     hMask.delete();
 
     if (h.empty()) {
-      alert("homography matrix empty!");
+      alert("Homography not found. Cannot align images. Please try again.");
     }
     else {
       console.log("h:", h);
@@ -667,12 +682,19 @@ function App() {
     image_B_final_result_normalized.delete();
     im2_normalized.delete();
 
+    const [numPixels, numBoxes] = calculateNumBoxes(image_abnormal_binary, bboxes);
+    const [numPixelsNegative, numBoxesNegative] = calculateNumBoxesNegative(image_abnormal_binary_neg, bboxes_neg);
+
     // image_abnormal.delete();
-    saveState(image_B_final_result, im2, image_abnormal_binary_rgb, image_abnormal_binary, image_abnormal_binary_neg, bboxes, bboxes_neg, image_abnormal, image_abnormal_neg, threshold, thresholdNegative);
+    saveState(isMergedBox, numPixels,
+      numBoxes,
+      numPixelsNegative,
+      numBoxesNegative, image_B_final_result, im2, image_abnormal_binary_rgb, image_abnormal_binary, image_abnormal_binary_neg, bboxes, bboxes_neg, image_abnormal, image_abnormal_neg, threshold, thresholdNegative);
   }
 
   const renderBboxesOverlayClean = () => {
-    if (cleanImg.isDeleted()) return;
+    if (!cleanImg || cleanImg.isDeleted()) return;
+    if (!imageAbnormalOverlayRef.current || !imageAbnormalOverlayRef.current) return;
 
     let imgCleanOverlay = cleanImg.clone();
     // draw bounding boxes
@@ -690,28 +712,28 @@ function App() {
     imgCleanOverlay.delete();
   }
 
-  const renderBboxesOverlay = () => {
+  const renderBboxesOverlayDefect = () => {
+    if (!defectImg || defectImg.isDeleted()) return;
     if (!imageAbnormalOverlayRef.current || !imageAbnormalOverlayRef.current) return;
-    if (!imgAbnormalRGB || imgAbnormalRGB.isDeleted()) return;
-    if (!imgAbnormalBinary || imgAbnormalBinary.isDeleted()) return;
-    if (!imgAbnormalBinaryNegative || imgAbnormalBinaryNegative.isDeleted()) return;
 
-    console.log("bboxes", bboxes.length)
-    // create a new copy of imgAbnormalRGB
-    let imgAbnormalRGBOverlay = imgAbnormalRGB.clone();
+    let imgDefectOverlay = defectImg.clone();
     // draw bounding boxes
     for (let i = 0; i < bboxes.length; i++) {
       let bbox = bboxes[i];
-      cv.rectangle(imgAbnormalRGBOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [255, 0, 0, 255], 2, cv.LINE_AA, 0);
+      cv.rectangle(imgDefectOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [255, 0, 0, 255], 2, cv.LINE_AA, 0);
     }
-    // draw bounding boxes for negative
+    // draw bboxesNegative
     for (let i = 0; i < bboxesNegative.length; i++) {
       let bbox = bboxesNegative[i];
-      cv.rectangle(imgAbnormalRGBOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [0, 0, 255, 255], 2, cv.LINE_AA, 0);
+      cv.rectangle(imgDefectOverlay, { x: bbox[0], y: bbox[1] }, { x: bbox[2], y: bbox[3] }, [0, 0, 255, 255], 2, cv.LINE_AA, 0);
     }
-    cv.imshow(imageAbnormalOverlayRef.current, imgAbnormalRGBOverlay);
-    imgAbnormalRGBOverlay.delete();
 
+    cv.imshow(imageAbnormalOverlayRef.current, imgDefectOverlay);
+    imgDefectOverlay.delete();
+  }
+
+  const calculateNumBoxes = (imgAbnormalBinary, bboxes) => {
+    if (!imgAbnormalBinary || imgAbnormalBinary.isDeleted()) return;
     let imgAbnormalBinaryAdjustment = imgAbnormalBinary.clone();
     // keep only the pixels in imgAbnormalBinaryAdjustment that are within the bounding boxes
     let bboxMask = cv.Mat.zeros(imgAbnormalBinaryAdjustment.rows, imgAbnormalBinaryAdjustment.cols, cv.CV_8U);
@@ -726,9 +748,17 @@ function App() {
     let num_pixels = cv.countNonZero(imgAbnormalBinaryAdjustment);
     setNumPixels(num_pixels);
     setNumBoxes(bboxes.length);
+    pairData.update(+pairId, {
+      numPixels: num_pixels,
+      numBoxes: bboxes.length
+    })
     imgAbnormalBinaryAdjustment.delete();
     bboxMask.delete();
+    return [num_pixels, bboxes.length]
+  }
 
+  const calculateNumBoxesNegative = (imgAbnormalBinaryNegative, bboxesNegative) => {
+    if (!imgAbnormalBinaryNegative || imgAbnormalBinaryNegative.isDeleted()) return;
     // for negatives
     let imgAbnormalBinaryAdjustmentNegative = imgAbnormalBinaryNegative.clone();
     // keep only the pixels in imgAbnormalBinaryAdjustment that are within the bounding boxes
@@ -744,8 +774,13 @@ function App() {
     let num_pixels_negative = cv.countNonZero(imgAbnormalBinaryAdjustmentNegative);
     setNumPixelsNegative(num_pixels_negative);
     setNumBoxesNegative(bboxesNegative.length);
+    pairData.update(+pairId, {
+      numPixelsNegative: num_pixels_negative,
+      numBoxesNegative: bboxesNegative.length
+    })
     imgAbnormalBinaryAdjustmentNegative.delete();
     bboxMaskNegative.delete();
+    return [num_pixels_negative, bboxesNegative.length]
   }
 
   const canvasClickHandler = (e: any) => {
@@ -788,9 +823,20 @@ function App() {
     if (mode === "clean") {
       renderBboxesOverlayClean();
     } else {
-      renderBboxesOverlay();
+      renderBboxesOverlayDefect();
     }
+    if (!imgAbnormal) return;
+    if (!imgAbnormalNegative) return;
+    calculateNumBoxes(imgAbnormalBinary, bboxes);
+    calculateNumBoxesNegative(imgAbnormalBinaryNegative, bboxesNegative);
   }, [bboxes, bboxesNegative])
+
+  useEffect(() => {
+    if (!imgAbnormal) return;
+    if (!imgAbnormalNegative) return;
+    thresholdDefects(imgAbnormal, threshold);
+    thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative);
+  }, [isMergedBox]);
 
   return (
     <>
@@ -806,7 +852,7 @@ function App() {
                 className={classNames(mode === 'defective' ? 'text-white bg-red-500' : 'text-black bg-grey-500', "rounded-md border-0 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400 w-24")} onClick={() => {
                   // show imageAligned
                   setMode("defective");
-                  renderBboxesOverlay();
+                  renderBboxesOverlayDefect();
                   pairData.update(+pairId, {
                     mode: "defective"
                   });
@@ -954,6 +1000,17 @@ function App() {
             <label htmlFor="method" className="text-gray-900 font-semibold">Size</label>
           </div> */}
           <div className="flex flex-col items-center space-y-2">
+            {/* disable merge bboxes checkbox */}
+            <div className="flex flex-row items-center space-x-2">
+              <input type="checkbox" className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
+                setIsMergedBox(e.target.checked);
+                pairData.update(+pairId, {
+                  isMergedBox: e.target.checked
+                });
+              }}
+                checked={isMergedBox}></input>
+              <label htmlFor="method" className="text-gray-900 font-semibold">Merge Boxes</label>
+            </div>
             <select className="w-32 rounded-md border-0 text-white bg-slate-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onChange={(e) => {
               setResolution(e.target.value);
             }}
@@ -990,10 +1047,28 @@ function App() {
               </button>
             </div>
           </div>
+          {/* button to run the algorithm */}
           <button type="button"
-            className="rounded-md border-0 text-white bg-green-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={() => {
-              computeDefects(img1URL, img2URL, method, resolution);
-            }}>Compare</button>
+            className="rounded-md border-0 text-white bg-green-500 px-3 py-2 text-sm font-semibold shadow-md hover:bg-gray-400" onClick={async () => {
+              setIsProcessing(true);
+              await computeDefects(img1URL, img2URL, method, resolution);
+              setIsProcessing(false);
+            }}>
+            {/* loading indicator */}
+            <span className='flex flex-col justify-center'>
+              {isProcessing ?
+                <svg className="block animate-spin h-5 w-5 text-white mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none"
+                  viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                :
+                <PlayIcon className="block h-5 w-5 text-white mx-auto" aria-hidden="true"></PlayIcon>
+              }
+              <span>Compare</span>
+            </span>
+          </button>
         </div>
       </div>
 
