@@ -113,6 +113,27 @@ function App() {
       if (imageAbnormalOverlayRef.current) {
         imageAbnormalOverlayRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalOverlayRef.current.width, imageAbnormalOverlayRef.current.height);
       }
+      if (imageCompareMatchesRef.current) {
+        imageCompareMatchesRef.current.getContext('2d')?.clearRect(0, 0, imageCompareMatchesRef.current.width, imageCompareMatchesRef.current.height);
+      }
+      if (imageAlignedRef.current) {
+        imageAlignedRef.current.getContext('2d')?.clearRect(0, 0, imageAlignedRef.current.width, imageAlignedRef.current.height);
+      }
+      if (imageMaskRef.current) {
+        imageMaskRef.current.getContext('2d')?.clearRect(0, 0, imageMaskRef.current.width, imageMaskRef.current.height);
+      }
+      if (imageDiffRef.current) {
+        imageDiffRef.current.getContext('2d')?.clearRect(0, 0, imageDiffRef.current.width, imageDiffRef.current.height);
+      }
+      if (imageDiffNegativeRef.current) {
+        imageDiffNegativeRef.current.getContext('2d')?.clearRect(0, 0, imageDiffNegativeRef.current.width, imageDiffNegativeRef.current.height);
+      }
+      if (imageAbnormalRef.current) {
+        imageAbnormalRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalRef.current.width, imageAbnormalRef.current.height);
+      }
+      if (imageAbnormalNegRef.current) {
+        imageAbnormalNegRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalNegRef.current.width, imageAbnormalNegRef.current.height);
+      }
 
       // reset state
       setNumPixels(0);
@@ -1245,7 +1266,7 @@ function App() {
           }
 
           {/* canvas for display, the canvas should be on top of one another */}
-          <div className={classNames("relative flex flex-row mt-4", loading ? "hidden":"visible")}>
+          <div className={classNames("relative flex flex-row mt-4", loading ? "hidden" : "visible")}>
             {/* download image from canvas button */}
             <button
               type="button"
@@ -1261,7 +1282,7 @@ function App() {
           </div>
 
 
-          <div className={classNames(!isDebugging ? 'hidden' : '')}>
+          <div className={classNames(!isDebugging ? 'hidden' : '', loading ? "hidden" : "visible")}>
             <label>Matches</label>
             <canvas className="w-full" ref={imageCompareMatchesRef} id="imageCompareMatches" width="300" height="300"></canvas>
             <label>Aligned Image</label>
