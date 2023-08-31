@@ -60,6 +60,8 @@ function App() {
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
   const [isMergedBox, setIsMergedBox] = useState<boolean>(true);
 
+  const [loading, setLoading] = useState<boolean>(false);
+
   // useEffect(() => {
   //   (async () => {
   //     if (pairId) {
@@ -77,75 +79,109 @@ function App() {
   // const input1Ref = useRef<HTMLInputElement>(null);
   // const input2Ref = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    setTimeout(async () => {
-      if (pairId) {
-        const pair = await pairs.get(+pairId);
-        const data = await pairData.get(+pairId);
-        if (pair) {
-          const imageData = await images.get(pair.cleanImageId);
-          if (!imageData) {
-            return;
-          }
-          const imageUrl = URL.createObjectURL(
-            new Blob([imageData.buffer], { type: imageData.type })
-          );
-          setImg1URL(imageUrl);
-          const imageData2 = await images.get(pair.defectiveImageId);
-          if (!imageData2) {
-            return;
-          }
-          const imageUrl2 = URL.createObjectURL(
-            new Blob([imageData2.buffer], { type: imageData2.type })
-          );
-          setImg2URL(imageUrl2);
-
-          // clear canvas
-          if (imageAbnormalOverlayRef.current) {
-            imageAbnormalOverlayRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalOverlayRef.current.width, imageAbnormalOverlayRef.current.height);
-          }
-
-          // reset state
-          setNumPixels(0);
-          setNumBoxes(0);
-          setNumPixelsNegative(0);
-          setNumBoxesNegative(0);
-          setBboxes([]);
-          setBboxesNegative([]);
-          setCleanImg(null);
-          setDefectImg(null);
-          setImgAbnormalBinary(null);
-          setImgAbnormalRGB(null);
-          setImgAbnormal(null);
-          setImgAbnormalBinaryNegative(null);
-          setImgAbnormalNegative(null);
-          setThreshold(0);
-          setThresholdNegative(0);
-          setMode("defective");
-          setMethod("ORB");
-          setResolution("512");
-          setAutoRatio(0.8);
-          setAutoRatioNegative(0.8);
-          setIsDebugging(false);
-          setIsMergedBox(true);
-
-          console.log('pair found', pairId, data)
-          if (data) {
-            // load state
-            try {
-              await loadState();
-            } catch (error) {
-              console.error(error)
-            }
-
-          }
-
-        } else {
-          console.log('pair not found', pairId);
-          navigate('/')
-        }
+  const loadPairIdData = async (pairId) => {
+    const pair = await pairs.get(+pairId);
+    const data = await pairData.get(+pairId);
+    if (pair) {
+      const imageData = await images.get(pair.cleanImageId);
+      if (!imageData) {
+        return;
       }
-    })
+      const imageUrl = URL.createObjectURL(
+        new Blob([imageData.buffer], { type: imageData.type })
+      );
+      // release object url
+      if (img1URL) {
+        URL.revokeObjectURL(img1URL);
+      }
+      setImg1URL(imageUrl);
+      const imageData2 = await images.get(pair.defectiveImageId);
+      if (!imageData2) {
+        return;
+      }
+      const imageUrl2 = URL.createObjectURL(
+        new Blob([imageData2.buffer], { type: imageData2.type })
+      );
+      // release object url
+      if (img2URL) {
+        URL.revokeObjectURL(img2URL);
+      }
+      setImg2URL(imageUrl2);
+
+      // clear canvas
+      if (imageAbnormalOverlayRef.current) {
+        imageAbnormalOverlayRef.current.getContext('2d')?.clearRect(0, 0, imageAbnormalOverlayRef.current.width, imageAbnormalOverlayRef.current.height);
+      }
+
+      // reset state
+      setNumPixels(0);
+      setNumBoxes(0);
+      setNumPixelsNegative(0);
+      setNumBoxesNegative(0);
+      setBboxes([]);
+      setBboxesNegative([]);
+      if (cleanImg && !cleanImg.isDeleted()) {
+        cleanImg.delete();
+      }
+      setCleanImg(null);
+      if (defectImg && !defectImg.isDeleted()) {
+        defectImg.delete();
+      }
+      setDefectImg(null);
+      if (imgAbnormalBinary && !imgAbnormalBinary.isDeleted()) {
+        imgAbnormalBinary.delete();
+      }
+      setImgAbnormalBinary(null);
+      if (imgAbnormalRGB && !imgAbnormalRGB.isDeleted()) {
+        imgAbnormalRGB.delete();
+      }
+      setImgAbnormalRGB(null);
+      if (imgAbnormal && !imgAbnormal.isDeleted()) {
+        imgAbnormal.delete();
+      }
+      setImgAbnormal(null);
+      if (imgAbnormalBinaryNegative && !imgAbnormalBinaryNegative.isDeleted()) {
+        imgAbnormalBinaryNegative.delete();
+      }
+      setImgAbnormalBinaryNegative(null);
+      if (imgAbnormalNegative && !imgAbnormalNegative.isDeleted()) {
+        imgAbnormalNegative.delete();
+      }
+      setImgAbnormalNegative(null);
+      setThreshold(0);
+      setThresholdNegative(0);
+      setMode("defective");
+      setMethod("ORB");
+      setResolution("512");
+      setAutoRatio(0.8);
+      setAutoRatioNegative(0.8);
+      setIsDebugging(false);
+      setIsMergedBox(true);
+
+      console.log('pair found', pairId)
+      if (data) {
+        // load state
+        try {
+          await loadState();
+        } catch (error) {
+          console.error(error)
+        }
+
+      }
+
+    } else {
+      console.log('pair not found', pairId);
+      navigate('/')
+    }
+  }
+  useEffect(() => {
+    (async () => {
+      if (pairId) {
+        setLoading(true);
+        await loadPairIdData(pairId)
+        setLoading(false);
+      }
+    })();
   }, [pairId]);
 
   const saveState = async (isMergedBox, numPixels,
@@ -246,7 +282,7 @@ function App() {
     }
   }
 
-  function thresholdDefectsNegative(image_abnormal, threshold = 0) {
+  const thresholdDefectsNegative = (image_abnormal, threshold = 0) => {
     // binarize image_abnormal
     let image_abnormal_binary = new cv.Mat();
     cv.threshold(image_abnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
@@ -290,7 +326,7 @@ function App() {
     return [image_abnormal_binary, bboxes];
   }
 
-  function thresholdDefects(image_abnormal, threshold = 0) {
+  const thresholdDefects = (image_abnormal, threshold = 0) => {
     // binarize image_abnormal
     let image_abnormal_binary = new cv.Mat();
     cv.threshold(image_abnormal, image_abnormal_binary, threshold, 255, cv.THRESH_BINARY);
@@ -333,7 +369,7 @@ function App() {
     return [image_abnormal_binary, bboxes];
   }
 
-  async function computeDefects(img1URL, img2URL, method = "ORB", resolution = "512", knnDistance_option = 0.7) {
+  const computeDefects = async (img1URL, img2URL, method = "ORB", resolution = "512", knnDistance_option = 0.7) => {
     // check if already computed with the same parameters
 
     // set seed to keep result consistent
@@ -1163,38 +1199,52 @@ function App() {
       <div className="bg-gray-50">
 
         <main className="mx-auto pb-48 pt-4 px-4">
-
-          {/* Products */}
-          <div className="flex flex-row my-1 space-x-4">
-            <div className="flex flex-1 bg-white shadow p-4 rounded">
-              <div className="flex-1 flex flex-col">
-                <div className="text-lg font-semibold text-gray-900">Clean</div>
-                <div className="text-sm font-semibold text-gray-900"># abnormal pixels: {numPixelsNegative}</div>
-                <div className="text-sm font-semibold text-gray-900"># abnormal boxes: {numBoxesNegative}
-                  <br></br><span className="font-normal">(click on the box to remove it)</span>
+          {loading ?
+            <>
+              <div className="flex flex-col items-center justify-center my-24">
+                <svg className="animate-spin h-5 w-5 text-gray-900 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none"
+                  viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span className="text-gray-900">Loading...</span>
+              </div>
+            </>
+            :
+            <>
+              <div className="flex flex-row my-1 space-x-4">
+                <div className="flex flex-1 bg-white shadow p-4 rounded">
+                  <div className="flex-1 flex flex-col">
+                    <div className="text-lg font-semibold text-gray-900">Clean</div>
+                    <div className="text-sm font-semibold text-gray-900"># abnormal pixels: {numPixelsNegative}</div>
+                    <div className="text-sm font-semibold text-gray-900"># abnormal boxes: {numBoxesNegative}
+                      <br></br><span className="font-normal">(click on the box to remove it)</span>
+                    </div>
+                  </div>
+                  <div className="aspect-w-1 aspect-h-1 ml-4">
+                    <img className="aspect-content w-24" src={placeholder(img1URL)} alt="Clean Image"></img>
+                  </div>
+                </div>
+                <div className="flex flex-1 bg-white shadow p-4 rounded">
+                  <div className="flex-1 flex flex-col">
+                    <div className="text-lg font-semibold text-gray-900">Defective</div>
+                    <div className="text-sm font-semibold text-gray-900"># abnormal pixels: {numPixels}</div>
+                    <div className="text-sm font-semibold text-gray-900"># abnormal boxes: {numBoxes}
+                      <br></br>
+                      <span className="font-normal">(click on the box to remove it)</span>
+                    </div>
+                  </div>
+                  <div className="aspect-w-1 aspect-h-1 ml-4">
+                    <img className="aspect-content w-24" src={placeholder(img2URL)} alt="Defective Image"></img>
+                  </div>
                 </div>
               </div>
-              <div className="aspect-w-1 aspect-h-1 ml-4">
-                <img className="aspect-content w-24" src={placeholder(img1URL)} alt="Clean Image"></img>
-              </div>
-            </div>
-            <div className="flex flex-1 bg-white shadow p-4 rounded">
-              <div className="flex-1 flex flex-col">
-                <div className="text-lg font-semibold text-gray-900">Defective</div>
-                <div className="text-sm font-semibold text-gray-900"># abnormal pixels: {numPixels}</div>
-                <div className="text-sm font-semibold text-gray-900"># abnormal boxes: {numBoxes}
-                  <br></br>
-                  <span className="font-normal">(click on the box to remove it)</span>
-                </div>
-              </div>
-              <div className="aspect-w-1 aspect-h-1 ml-4">
-                <img className="aspect-content w-24" src={placeholder(img2URL)} alt="Defective Image"></img>
-              </div>
-            </div>
-          </div>
+            </>
+          }
 
           {/* canvas for display, the canvas should be on top of one another */}
-          <div className="relative flex flex-row mt-4">
+          <div className={classNames("relative flex flex-row mt-4", loading ? "hidden":"visible")}>
             {/* download image from canvas button */}
             <button
               type="button"
@@ -1226,8 +1276,8 @@ function App() {
             <label>Binary Threshold Negative</label>
             <canvas className="w-full" ref={imageDiffNegativeRef} id="imageDiffNegative" width="300" height="300"></canvas>
           </div>
-        </main>
-      </div>
+        </main >
+      </div >
     </>
   )
 }
