@@ -12,7 +12,7 @@ import { loadImageElementFromURL } from './utils/file';
 import { jsonToMat, matToJson } from './utils/cvmat';
 import { placeholder } from './utils/image';
 
-const autoOptions = [0, .25, .5, .8, .9, 1.0];
+// const autoOptions = [0, .25, .5, .8, .9, 1.0];
 
 function App() {
   const { pairId } = useParams();
@@ -59,6 +59,7 @@ function App() {
 
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
   const [isMergedBox, setIsMergedBox] = useState<boolean>(true);
+
 
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -153,8 +154,8 @@ function App() {
       setMode("defective");
       setMethod("ORB");
       setResolution("512");
-      setAutoRatio(0.8);
-      setAutoRatioNegative(0.8);
+      setAutoRatio(0.7);
+      setAutoRatioNegative(0.7);
       setIsDebugging(false);
       setIsMergedBox(true);
 
@@ -168,12 +169,12 @@ function App() {
         }
 
       }
-
     } else {
       console.log('pair not found', pairId);
       navigate('/')
     }
   }
+
   useEffect(() => {
     (async () => {
       if (pairId) {
