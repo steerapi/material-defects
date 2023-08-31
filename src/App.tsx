@@ -54,8 +54,8 @@ function App() {
   const [mode, setMode] = useState<string>("defective");
   const [method, setMethod] = useState<string>("ORB");
   const [resolution, setResolution] = useState<string>("512");
-  const [autoRatio, setAutoRatio] = useState<number>(0.8);
-  const [autoRatioNegative, setAutoRatioNegative] = useState<number>(0.8);
+  const [autoRatio, setAutoRatio] = useState<number>(0.7);
+  const [autoRatioNegative, setAutoRatioNegative] = useState<number>(0.7);
 
   const [isDebugging, setIsDebugging] = useState<boolean>(false);
   const [isMergedBox, setIsMergedBox] = useState<boolean>(true);
@@ -858,7 +858,7 @@ function App() {
                   });
                 }}>Defective</button>
               <button type="button"
-                className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                className="rounded-md border-0 text-white bg-red-400 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold - 1);
                   thresholdDefects(imgAbnormal, threshold - 1);
                   // update pairs threshold
@@ -870,7 +870,7 @@ function App() {
               <label htmlFor="threshold" className="text-gray-900 font-semibold flex-grow">{threshold}</label>
               {/* button to plus threshold */}
               <button type="button"
-                className="rounded-md border-0 text-white bg-red-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                className="rounded-md border-0 text-white bg-red-400 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThreshold(threshold + 1);
                   thresholdDefects(imgAbnormal, threshold + 1);
                   pairData.update(+pairId, {
@@ -878,7 +878,51 @@ function App() {
                   });
                 }}>+</button>
               {/* auto detect threshold button */}
-              <span className="isolate inline-flex rounded-md shadow-sm">
+              <button type="button"
+                className="rounded-md border-0 text-white bg-red-600 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  let newV = autoRatio - 0.1
+                  // round to 0.1
+                  newV = Math.round(newV * 10) / 10;
+                  // min 0 max 1
+                  if (newV < 0) {
+                    newV = 0;
+                  }
+                  if (newV > 1) {
+                    newV = 1;
+                  }
+                  setAutoRatio(newV);
+                  const t = autoThreshold(imgAbnormal, newV);
+                  setThreshold(t);
+                  thresholdDefects(imgAbnormal, t);
+                  pairData.update(+pairId, {
+                    threshold: t
+                  });
+                }}>-</button>
+              {/* display threshold value */}
+              <label htmlFor="threshold" className="text-gray-900 font-semibold flex-grow">{autoRatio?.toFixed(1)}</label>
+              {/* button to plus threshold */}
+              <button type="button"
+                className="rounded-md border-0 text-white bg-red-600 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  let newV = autoRatio + 0.1
+                  // round to 0.1
+                  newV = Math.round(newV * 10) / 10;
+                  // min 0 max 1
+                  if (newV < 0) {
+                    newV = 0;
+                  }
+                  if (newV > 1) {
+                    newV = 1;
+                  }
+                  setAutoRatio(newV);
+                  const t = autoThreshold(imgAbnormal, newV);
+                  setThreshold(t);
+                  thresholdDefects(imgAbnormal, t);
+                  pairData.update(+pairId, {
+                    threshold: t
+                  });
+                }}>+</button>
+              {/* <span className="isolate inline-flex rounded-md shadow-sm">
+
                 {autoOptions.map((value, i) => (
                   <button
                     key={value}
@@ -900,7 +944,7 @@ function App() {
                     {value}
                   </button>
                 ))}
-              </span>
+              </span> */}
 
             </div>
             <div className="flex flex-row space-x-2 items-center">
@@ -915,7 +959,7 @@ function App() {
                   // cv.imshow(imageAbnormalOverlayRef.current, cleanImg);
                 }}>Clean</button>
               <button type="button"
-                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                className="rounded-md border-0 text-white bg-blue-400 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThresholdNegative(thresholdNegative - 1);
                   thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative - 1);
                   pairData.update(+pairId, {
@@ -926,7 +970,7 @@ function App() {
               <label htmlFor="thresholdNegative" className="text-gray-900 font-semibold flex-grow">{thresholdNegative}</label>
               {/* button to plus threshold */}
               <button type="button"
-                className="rounded-md border-0 text-white bg-blue-500 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                className="rounded-md border-0 text-white bg-blue-400 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
                   setThresholdNegative(thresholdNegative + 1);
                   thresholdDefectsNegative(imgAbnormalNegative, thresholdNegative + 1);
                   pairData.update(+pairId, {
@@ -934,7 +978,51 @@ function App() {
                   });
                 }}>+</button>
               {/* auto detect threshold button */}
-              <span className="isolate inline-flex rounded-md shadow-sm">
+              {/* auto detect threshold button */}
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-600 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  let newV = autoRatioNegative - 0.1
+                  // round to 0.1
+                  newV = Math.round(newV * 10) / 10;
+                  // min 0 max 1
+                  if (newV < 0) {
+                    newV = 0;
+                  }
+                  if (newV > 1) {
+                    newV = 1;
+                  }
+                  setAutoRatioNegative(newV);
+                  const t = autoThreshold(imgAbnormalNegative, newV);
+                  setThresholdNegative(t);
+                  thresholdDefectsNegative(imgAbnormalNegative, t);
+                  pairData.update(+pairId, {
+                    thresholdNegative: t
+                  });
+                }}>-</button>
+              {/* display threshold value */}
+              <label htmlFor="threshold" className="text-gray-900 font-semibold flex-grow">{autoRatioNegative?.toFixed(1)}</label>
+              {/* button to plus threshold */}
+              <button type="button"
+                className="rounded-md border-0 text-white bg-blue-600 px-3 py-2 text-xs font-semibold shadow-md hover:bg-gray-400" onClick={() => {
+                  let newV = autoRatioNegative + 0.1
+                  // round to 0.1
+                  newV = Math.round(newV * 10) / 10;
+                  // min 0 max 1
+                  if (newV < 0) {
+                    newV = 0;
+                  }
+                  if (newV > 1) {
+                    newV = 1;
+                  }
+                  setAutoRatioNegative(newV);
+                  const t = autoThreshold(imgAbnormalNegative, newV);
+                  setThresholdNegative(t);
+                  thresholdDefectsNegative(imgAbnormalNegative, t);
+                  pairData.update(+pairId, {
+                    thresholdNegative: t
+                  });
+                }}>+</button>
+              {/* <span className="isolate inline-flex rounded-md shadow-sm">
                 {autoOptions.map((value, i) => (
                   <button
                     key={value}
@@ -956,7 +1044,7 @@ function App() {
                     {value}
                   </button>
                 ))}
-              </span>
+              </span> */}
             </div>
             {/* swap button to swap clean and defective image */}
             <div className='flex flex-row'>
