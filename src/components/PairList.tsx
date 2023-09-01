@@ -229,7 +229,7 @@ export const ImageItem = ({ imageId }) => {
       <div className="flex flex-row w-24 m-0 self-center relative">
         <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={placeholder(imageUrl)} alt={imageId} />
         {/* name */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-50 text-white text-xs px-1 py-1 whitespace-nowrap">{name}</div>
+        <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-50 text-white text-xs px-1 py-1 whitespace-nowrap overflow-hidden">{name}</div>
       </div>
     </>
   )
