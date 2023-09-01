@@ -84,8 +84,8 @@ export class DefectDexie extends Dexie {
 
   constructor() {
     super("defects");
-    this.version(2).stores({
-      files: "++id,&name",
+    this.version(3).stores({
+      files: "++id,&name,imageId",
       images: "++id",
       pairs: "++id",
       pairData: "++id",

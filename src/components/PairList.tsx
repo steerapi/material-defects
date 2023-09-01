@@ -199,6 +199,7 @@ export function PairListItem({ pair: _pair, onDelete }) {
 
 export const ImageItem = ({ imageId }) => {
   const [imageUrl, setImageUrl] = useState("");
+  const [name, setName] = useState("");
 
   useEffect(() => {
     setTimeout(async () => {
@@ -213,13 +214,22 @@ export const ImageItem = ({ imageId }) => {
         new Blob([imageData.buffer], { type: imageData.type })
       );
       setImageUrl(imageUrl);
+
+      // find files with this imageId
+      const file = await files.where('imageId').equals(imageId).first();
+      console.log('file', file)
+      if (file) {
+        setName(file.name)
+      }      
     })
   }, [imageId]);
 
   return (
     <>
-      <div className="self-center">
+      <div className="flex flex-row w-24 m-0 self-center relative">
         <img className="w-24 h-20 border-2 border-gray-400 rounded-md overflow-hidden" src={placeholder(imageUrl)} alt={imageId} />
+        {/* name */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-50 text-white text-xs px-1 py-1 whitespace-nowrap">{name}</div>
       </div>
     </>
   )

@@ -7,7 +7,7 @@ import { BugAntIcon as BugAntIconOutline } from '@heroicons/react/24/outline';
 import { classNames } from './utils/react';
 import { autoThreshold, downloadImage, histogramMatching, mergeBboxes, postProcessImageAbnormal } from './utils/vision';
 import { useNavigate, useParams } from 'react-router-dom';
-import { images, pairData, pairs } from './db/db';
+import { files, images, pairData, pairs } from './db/db';
 import { loadImageElementFromURL } from './utils/file';
 import { jsonToMat, matToJson } from './utils/cvmat';
 import { placeholder } from './utils/image';
@@ -47,6 +47,8 @@ function App() {
   // const [img2, setImg2] = useState<HTMLImageElement | null>(null);
   const [img1URL, setImg1URL] = useState<any>(null);
   const [img2URL, setImg2URL] = useState<any>(null);
+  const [img1Name, setImg1Name] = useState<string>("");
+  const [img2Name, setImg2Name] = useState<string>("");
 
   const [threshold, setThreshold] = useState<number>(0);
   const [thresholdNegative, setThresholdNegative] = useState<number>(0);
@@ -96,6 +98,11 @@ function App() {
         URL.revokeObjectURL(img1URL);
       }
       setImg1URL(imageUrl);
+      const file1 = await files.where('imageId').equals(pair.cleanImageId).first();
+      if (file1) {
+        setImg1Name(file1.name)
+      }
+      
       const imageData2 = await images.get(pair.defectiveImageId);
       if (!imageData2) {
         return;
@@ -108,6 +115,10 @@ function App() {
         URL.revokeObjectURL(img2URL);
       }
       setImg2URL(imageUrl2);
+      const file2 = await files.where('imageId').equals(pair.defectiveImageId).first();
+      if (file2) {
+        setImg2Name(file2.name)
+      }
 
       // clear canvas
       if (imageAbnormalOverlayRef.current) {
@@ -1246,6 +1257,8 @@ function App() {
                   </div>
                   <div className="aspect-w-1 aspect-h-1 ml-4">
                     <img className="aspect-content w-24" src={placeholder(img1URL)} alt="Clean Image"></img>
+                    {/* display img1Name */}
+                    <div className="text-xs">{img1Name}</div>
                   </div>
                 </div>
                 <div className="flex flex-1 bg-white shadow p-4 rounded">
@@ -1259,6 +1272,8 @@ function App() {
                   </div>
                   <div className="aspect-w-1 aspect-h-1 ml-4">
                     <img className="aspect-content w-24" src={placeholder(img2URL)} alt="Defective Image"></img>
+                    {/* display img2Name */}
+                    <div className="text-xs">{img2Name}</div>
                   </div>
                 </div>
               </div>
